@@ -1,0 +1,61 @@
+#  Observability Platform — OpenTelemetry Collector config
+#
+# The fan-out heart of the platform:
+#   • spans  → LangFuse v3 via its native OTLP endpoint (tracing / eval / cost)
+#   • spans  → spanmetrics connector → RED metrics → Prometheus (ops)
+#
+# The spanmetrics connector produces stable metric names (calls_total,
+# duration_milliseconds_bucket) that Prometheus scrapes from :8889.
+
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+      http: { endpoint: 0.0.0.0:4318 }
+
+connectors:
+  spanmetrics:
+    histogram:
+      explicit:
+        buckets: [50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s, 30s]
+    dimensions:
+      - name: agent.name
+      - name: gen_ai.request.model
+    metrics_flush_interval: 15s
+
+processors:
+  batch: {}
+  resource:
+    attributes:
+      - { key: deployment.platform, value: platform, action: upsert }
+  # Central PII / client-data redaction BEFORE traces reach any backend.
+  # Tune the keys to match what your agents attach. (See plan §Security.)
+  attributes/redaction:
+    actions:
+      - { key: user.email, action: delete }
+      - { key: user.ip, action: delete }
+      - { key: client.ssn, action: delete }
+
+exporters:
+  # Traces → LangFuse via its native OTLP endpoint.
+  otlphttp/langfuse:
+    endpoint: http://langfuse-web:3000/api/public/otel
+    headers:
+      # base64("public_key:secret_key") — injected from the LANGFUSE_OTEL_AUTH env var.
+      Authorization: "Basic ${env:LANGFUSE_OTEL_AUTH}"
+
+  # Metrics → Prometheus scrape endpoint on :8889
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    enable_open_metrics: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [attributes/redaction, resource, batch]
+      exporters: [otlphttp/langfuse, spanmetrics]
+    metrics:
+      receivers: [spanmetrics]
+      processors: [batch]
+      exporters: [prometheus]

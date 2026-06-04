@@ -1,0 +1,37 @@
+# Local-only overrides. Compose auto-merges this on top of docker-compose.yml
+# when both are passed. It exposes internal service ports to the host so you
+# can connect with psql / clickhouse-client / redis-cli / the MinIO console
+# during development. Do NOT use this layout in shared or production envs.
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  clickhouse:
+    ports:
+      - "8123:8123"   # HTTP
+      - "9000:9000"   # native protocol
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  minio:
+    ports:
+      - "9002:9000"   # S3 API on host:9002 (host:9000 is taken by ClickHouse native)
+      - "9001:9001"   # web console (http://localhost:9001)
+
+  # Infra exporter scrape endpoints — handy to curl while wiring dashboards.
+  # node-exporter and cadvisor are linux-profile-only; their ports only apply there.
+  node-exporter:
+    profiles: ["linux"]
+    ports:
+      - "9100:9100"
+  cadvisor:
+    profiles: ["linux"]
+    ports:
+      - "8080:8080"
+  postgres-exporter:
+    ports:
+      - "9187:9187"
