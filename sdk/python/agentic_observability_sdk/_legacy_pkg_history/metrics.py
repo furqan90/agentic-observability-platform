@@ -1,5 +1,5 @@
 """
-Token + cost OTel counters → OTel Collector → Prometheus → Grafana cost panel.
+Token + cost OTel counters -> OTel Collector -> Prometheus -> Grafana cost panel.
 
 OTEL_EXPORTER_OTLP_ENDPOINT must point at the Collector (:4318), not LangFuse.
 When the env var is unset, record_usage() is a no-op — the agent still runs.
@@ -50,7 +50,7 @@ def init_metrics() -> None:
 
 def _get_counters():
     """Return (tokens_counter, cost_counter), creating them lazily after the
-    MeterProvider is set so they are bound to the real exporter, not the NoOp."""
+    MeterProvider is set so they bind to the real exporter, not the NoOp."""
     global _tokens, _cost
     if _tokens is None:
         meter = otel_metrics.get_meter("platform.agents")
@@ -76,7 +76,7 @@ def record_usage(
 ) -> None:
     """Record token consumption and USD cost for a single agent invocation.
 
-    Call this once per LLM response, after you receive the completion:
+    Call once per LLM response, after receiving the completion:
 
         record_usage("my-agent", "gpt-4o", input_tokens=800, output_tokens=200, cost_usd=0.012)
 

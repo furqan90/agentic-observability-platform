@@ -19,55 +19,53 @@ Your agent
                                                         └──► Grafana (dashboards + alerts)
 ```
 
-The `sdk/` folder is a thin facade over LangFuse v3 + the OTel SDK.
+The `agentic_observability_sdk` package is a thin facade over LangFuse v3 + the OTel SDK.
 You import it — never `langfuse` directly. That single rule is what keeps
 a backend swap from becoming a multi-repo emergency.
 
 ---
 
-## Step 1 — Copy the `sdk/` folder into your agent repo
+## Step 1 — Install the package
+
+`agentic-observability-sdk` ships as a proper pip-installable package. No folder copying needed.
+
+**Option A — from the platform repo (local/monorepo):**
+
+```bash
+pip install -e /path/to/agentic-observability-platform/agentic_observability_sdk
+```
+
+**Option B — from a Git URL (recommended for agent projects outside the monorepo):**
+
+```bash
+pip install "agentic-observability-sdk @ git+https://github.com/platform/observability-platform.git#subdirectory=agentic_observability_sdk"
+```
+
+**Option C — pin in `requirements.txt` or `pyproject.toml`:**
 
 ```
-your-agent-project/
-├── sdk/                   <── copy this entire folder from the platform repo
-│   ├── python/
-│   │   ├── __init__.py
-│   │   ├── tracer.py      (LangFuse v3 client singleton — only place that imports langfuse)
-│   │   ├── decorators.py  (@trace_agent, @trace_tool)
-│   │   └── metrics.py     (token / cost OTel counters)
-│   ├── pyproject.toml
-│   └── README.md
-├── your_agent.py
-└── requirements.txt
+# requirements.txt
+agentic-observability-sdk @ git+https://...#subdirectory=agentic_observability_sdk
+```
+
+```toml
+# pyproject.toml
+dependencies = [
+    "agentic-observability-sdk @ git+https://...#subdirectory=agentic_observability_sdk",
+]
 ```
 
 ---
 
-## Step 2 — Install the dependencies
-
-**Option A — install the sdk package itself (recommended):**
+## Step 2 — Verify the install
 
 ```bash
-pip install -e ./sdk
+python -c "from agentic_observability_sdk import get_tracer, trace_agent, trace_tool, record_usage, shutdown; print('OK')"
+# Expected: OK
 ```
 
-This installs the three required packages as declared in `sdk/pyproject.toml`.
-
-**Option B — install the dependencies directly:**
-
-```bash
-pip install "langfuse>=3.0.0,<4.0.0" \
-            "opentelemetry-sdk>=1.25.0" \
-            "opentelemetry-exporter-otlp>=1.25.0"
-```
-
-**Add to `requirements.txt` or your `pyproject.toml` dependencies:**
-
-```
-langfuse>=3.0.0,<4.0.0
-opentelemetry-sdk>=1.25.0
-opentelemetry-exporter-otlp>=1.25.0
-```
+The package pulls in its own dependencies (`langfuse`, `opentelemetry-sdk`,
+`opentelemetry-exporter-otlp`) — no separate installs needed.
 
 ---
 
@@ -117,18 +115,21 @@ DEPLOY_ENV=local              # examples: local  client-acme  aks-prod  teams-bo
 ### 4a. Initialise once at startup
 
 ```python
-from sdk.python import get_tracer
+import atexit
+from agentic_observability_sdk import get_tracer, shutdown
 
-get_tracer()   # call once — registers the LangFuse client and OTel provider globally
+get_tracer()              # registers LangFuse + OTel provider (memoised — safe to call repeatedly)
+atexit.register(shutdown) # flushes buffered spans/metrics cleanly on process exit
 ```
 
-Put this at the top of your entry point (`main.py`, `app.py`, or wherever the
-process starts). Calling it multiple times is safe (it is memoised).
+Put this at the top of your entry point (`main.py`, `app.py`, FastAPI lifespan, etc.).
+The `atexit` registration is especially important for CLI tools or short-lived scripts
+where the process may exit before the export buffer flushes automatically.
 
 ### 4b. Wrap agent entry points with `@trace_agent`
 
 ```python
-from sdk.python import trace_agent, record_usage
+from agentic_observability_sdk import trace_agent, record_usage
 
 @trace_agent(name="eka-query-agent", tags=["eka", "rag"])
 def run_agent(user_input: str) -> str:
@@ -153,7 +154,7 @@ appears as a separate trace entry in the LangFuse UI.
 ### 4c. Wrap tool calls with `@trace_tool`
 
 ```python
-from sdk.python import trace_tool
+from agentic_observability_sdk import trace_tool
 
 @trace_tool(name="vector-search")
 def search_knowledge_base(query: str) -> list:
@@ -174,7 +175,7 @@ the same trace in LangFuse.
 
 ```python
 # my_agent.py
-from sdk.python import get_tracer, trace_agent, trace_tool, record_usage
+from agentic_observability_sdk import get_tracer, trace_agent, trace_tool, record_usage
 
 get_tracer()   # startup init
 
@@ -235,14 +236,14 @@ curl -s http://<platform-host>:3000/api/public/projects \
 from langfuse import observe, Langfuse, get_client   # ❌ direct import
 
 # ALWAYS do this:
-from sdk.python import trace_agent, trace_tool       # ✅ facade import
+from agentic_observability_sdk import trace_agent, trace_tool       # ✅ facade import
 ```
 
 The `langfuse` package is imported in exactly **one** file in the entire
-platform: `sdk/python/tracer.py`. That is the swap point. If  ever
-moves to a different tracing backend, we rewrite one 30-line file — not every
-agent across every client environment. A direct `langfuse` import in agent
-code is a review-blocking violation.
+platform: `agentic_observability_sdk/tracer.py`. That is the swap point.
+If  ever moves to a different tracing backend, we rewrite one file —
+not every agent across every client environment. A direct `langfuse` import in
+agent code is a review-blocking violation.
 
 ---
 

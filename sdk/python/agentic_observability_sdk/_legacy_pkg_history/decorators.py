@@ -5,7 +5,7 @@
                 Works with both sync and async functions.
 
 Usage:
-    from observability_sdk import trace_agent, trace_tool
+    from agentic_observability_sdk import trace_agent, trace_tool
 
     @trace_agent(name="eka-query-agent", tags=["eka", "rag"])
     async def run_query(user_input: str) -> str: ...

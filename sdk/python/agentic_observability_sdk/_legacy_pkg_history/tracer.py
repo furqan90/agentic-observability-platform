@@ -16,7 +16,7 @@ def get_tracer() -> "Langfuse":
     """Initialise LangFuse + OTel metrics. Idempotent — safe to call multiple times.
 
     Call once at agent startup:
-        from observability_sdk import get_tracer
+        from agentic_observability_sdk import get_tracer
         get_tracer()
     """
     Langfuse(
@@ -26,7 +26,7 @@ def get_tracer() -> "Langfuse":
         environment=os.environ.get("DEPLOY_ENV", "local"),
     )
 
-    # Wire token/cost metrics to the OTel Collector → Prometheus → Grafana.
+    # Wire token/cost metrics to the OTel Collector -> Prometheus -> Grafana.
     # Lazy import keeps this file the sole langfuse swap point.
     from .metrics import init_metrics
     init_metrics()
@@ -37,16 +37,15 @@ def get_tracer() -> "Langfuse":
 def shutdown() -> None:
     """Flush and shut down all telemetry providers cleanly.
 
-    Call this at process exit in CLI tools, scripts, or serverless handlers
-    to ensure buffered spans and metrics are flushed before the process dies.
+    Call at process exit in CLI tools, scripts, or serverless handlers to
+    ensure buffered spans and metrics are flushed before the process dies.
 
         import atexit
-        from observability_sdk import shutdown
+        from agentic_observability_sdk import shutdown
         atexit.register(shutdown)
     """
     try:
-        client = get_client()
-        client.flush()
+        get_client().flush()
     except Exception:
         pass
 

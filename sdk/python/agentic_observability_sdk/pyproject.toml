@@ -1,5 +1,5 @@
 [project]
-name = "observability"
+name = "agentic-observability-sdk"
 version = "0.1.0"
 description = " agent instrumentation facade (LangFuse v3 + OpenTelemetry). Agents import this, never langfuse directly."
 readme = "README.md"
@@ -18,13 +18,16 @@ dev = ["pytest>=8.0", "ruff>=0.5"]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-# Standard nested layout — the import package `observability_sdk` lives one
-# level below this project root.
-# Install editable:  pip install -e ./observability_sdk
-# Install from Git:  pip install git+https://github.com/platform/...@main#subdirectory=observability_sdk
+# pip install name : agentic-observability-sdk
+# import name      : agentic_observability_sdk
+# These are intentionally the same (dash vs underscore) so developers never
+# have to remember two different names.
+#
+# Install editable:  pip install -e ./agentic_observability_sdk
+# Install from Git:  pip install "agentic-observability-sdk @ git+https://github.com/platform/observability-platform.git#subdirectory=agentic_observability_sdk"
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["observability_sdk*"]
+include = ["agentic_observability_sdk*"]
 
 [tool.ruff]
 line-length = 100
