@@ -24,7 +24,7 @@ build-backend = "setuptools.build_meta"
 # have to remember two different names.
 #
 # Install editable:  pip install -e ./agentic_observability_sdk
-# Install from Git:  pip install "agentic-observability-sdk @ git+https://github.com/platform/observability-platform.git#subdirectory=agentic_observability_sdk"
+# Install from Git:  pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=agentic_observability_sdk"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["agentic_observability_sdk*"]

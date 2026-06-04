@@ -38,20 +38,20 @@ pip install -e /path/to/agentic-observability-platform/agentic_observability_sdk
 **Option B — from a Git URL (recommended for agent projects outside the monorepo):**
 
 ```bash
-pip install "agentic-observability-sdk @ git+https://github.com/platform/observability-platform.git#subdirectory=agentic_observability_sdk"
+pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=agentic_observability_sdk"
 ```
 
 **Option C — pin in `requirements.txt` or `pyproject.toml`:**
 
 ```
 # requirements.txt
-agentic-observability-sdk @ git+https://...#subdirectory=agentic_observability_sdk
+agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=agentic_observability_sdk
 ```
 
 ```toml
 # pyproject.toml
 dependencies = [
-    "agentic-observability-sdk @ git+https://...#subdirectory=agentic_observability_sdk",
+    "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=agentic_observability_sdk",
 ]
 ```
 
