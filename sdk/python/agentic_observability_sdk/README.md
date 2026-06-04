@@ -4,8 +4,7 @@ Instrumentation facade for all  agent projects.
 **Agents import this — never `langfuse` directly.**
 
 > **New to this?** Start with **[AGENT-ONBOARDING.md](AGENT-ONBOARDING.md)** —
-> it covers everything from copying the folder to verifying your first trace
-> appears in LangFuse and Grafana.
+> it covers everything from install to verifying your first trace in LangFuse and Grafana.
 
 ---
 
@@ -14,11 +13,14 @@ Instrumentation facade for all  agent projects.
 ### Install
 
 ```bash
-pip install -e ./sdk
-# or: pip install "langfuse>=3.0,<4.0" opentelemetry-sdk opentelemetry-exporter-otlp
+# From the platform repo (local / monorepo)
+pip install -e ./agentic_observability_sdk
+
+# From GitHub (agent projects outside the monorepo)
+pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=agentic_observability_sdk"
 ```
 
-### Five env vars (agent host)
+### Five env vars (set on every agent host)
 
 ```env
 LANGFUSE_PUBLIC_KEY=pk-lf-local
@@ -31,9 +33,11 @@ DEPLOY_ENV=local
 ### Minimum viable trace
 
 ```python
-from sdk.python import get_tracer, trace_agent, trace_tool, record_usage
+import atexit
+from agentic_observability_sdk import get_tracer, trace_agent, trace_tool, record_usage, shutdown
 
-get_tracer()  # once at startup
+get_tracer()               # once at startup
+atexit.register(shutdown)  # flush on exit
 
 @trace_agent(name="my-agent", tags=["demo"])
 def run(user_input: str) -> str:
@@ -46,13 +50,43 @@ def search(q: str) -> str:
     ...
 ```
 
+### Making LLM calls visible (prompts + responses)
+
+`@trace_agent` records function args/return — not internal LLM calls. Use the
+framework-specific helper so prompts and responses become LangFuse observations:
+
+```python
+# LangChain / LangGraph
+from agentic_observability_sdk import get_langchain_handler
+handler = get_langchain_handler()
+result = llm.invoke(messages, config={"callbacks": [handler]})
+
+# OpenAI SDK (drop-in replacement for openai.OpenAI())
+from agentic_observability_sdk import get_openai_client
+client = get_openai_client()
+client.chat.completions.create(model="gpt-4o", messages=messages)
+
+# Anthropic SDK (drop-in replacement for anthropic.Anthropic())
+from agentic_observability_sdk import get_anthropic_client
+client = get_anthropic_client()
+client.messages.create(model="claude-sonnet-4-6", messages=messages, max_tokens=1024)
+```
+
+Install only what your agent uses:
+```bash
+pip install "agentic-observability-sdk[openai]"      # OpenAI
+pip install "agentic-observability-sdk[anthropic]"   # Anthropic
+pip install "agentic-observability-sdk[langchain]"   # LangChain/LangGraph
+pip install "agentic-observability-sdk[all]"         # everything
+```
+
 ### What goes where
 
 | You want to see… | Go to |
 |---|---|
-| Trace tree, cost, eval scores, token I/O | LangFuse `:3000` |
+| Trace tree, prompts, responses, cost, eval scores | LangFuse `:3000` |
 | Agent rate / error / latency next to infra | Grafana `:3001` |
-| To change the tracing backend | Edit `python/tracer.py` only |
+| To change the tracing backend | Edit `tracer.py` only |
 
 ---
 

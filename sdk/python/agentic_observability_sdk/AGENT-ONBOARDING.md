@@ -171,6 +171,125 @@ def generate_response(context: list) -> str:
 automatic — any `@trace_tool` call inside a `@trace_agent` call is linked to
 the same trace in LangFuse.
 
+### 4d. Capture LangChain LLM calls (prompts + responses)
+
+`@trace_agent` and `@trace_tool` record a function's inputs and return value.
+They do **not** automatically record what happens *inside* the function — so
+`llm.invoke(messages)` calls are invisible: LangFuse never sees the exact
+system prompt, the human message, tool call rounds, or the raw response.
+
+Fix: pass `get_langchain_handler()` as a LangChain callback. It hooks into
+LangChain's callback bus and records every LLM round-trip as a child
+observation nested inside the current span, including:
+- exact messages array (system, human, tool messages)
+- raw assistant response and tool calls
+- token counts per call
+
+```python
+from agentic_observability_sdk import trace_agent, get_langchain_handler
+
+@trace_agent(name="discover-models", tags=["rag"])
+def run_discover_models_node(profile, spec):
+    messages = [system_prompt, human_message]
+
+    # Without this, the LLM call is invisible in LangFuse:
+    # result = llm_with_tools.invoke(messages)
+
+    # With the handler — prompts + response recorded as child observations:
+    handler = get_langchain_handler()
+    result = llm_with_tools.invoke(messages, config={"callbacks": [handler]})
+    ...
+```
+
+**Or bind once on the model** so every call is captured automatically:
+
+```python
+from agentic_observability_sdk import get_langchain_handler
+
+# At model construction time:
+handler = get_langchain_handler()
+llm_with_tools = ChatOpenAI(model="gpt-4o").with_config({"callbacks": [handler]})
+
+# Now every invoke() is captured — no per-call changes needed.
+result = llm_with_tools.invoke(messages)
+```
+
+> `get_langchain_handler()` must be called **after** `get_tracer()`. When
+> called inside a `@trace_agent` span it returns a context-aware handler that
+> automatically nests the LLM observation under that trace. Outside a trace
+> it returns a bare handler that records nothing rather than raising.
+
+Requires the langchain-core package:
+```bash
+pip install "agentic-observability-sdk[langchain]"
+```
+
+---
+
+### 4e. Capture OpenAI SDK calls (direct, non-LangChain)
+
+If your agent calls OpenAI directly, use `get_openai_client()` as a drop-in
+replacement for `openai.OpenAI()`. Every `client.chat.completions.create()`
+is automatically recorded — no per-call changes:
+
+```python
+from agentic_observability_sdk import get_openai_client
+
+# Replaces: from openai import OpenAI; client = OpenAI()
+client = get_openai_client()   # or get_openai_client(api_key="...", base_url="...")
+
+@trace_agent(name="my-agent")
+def run(messages: list) -> str:
+    response = client.chat.completions.create(model="gpt-4o", messages=messages)
+    return response.choices[0].message.content
+```
+
+Requires the openai package:
+```bash
+pip install "agentic-observability-sdk[openai]"
+```
+
+---
+
+### 4f. Capture Anthropic SDK calls (direct, non-LangChain)
+
+Use `get_anthropic_client()` as a drop-in replacement for `anthropic.Anthropic()`:
+
+```python
+from agentic_observability_sdk import get_anthropic_client
+
+# Replaces: from anthropic import Anthropic; client = Anthropic()
+client = get_anthropic_client()
+
+@trace_agent(name="my-agent")
+def run(messages: list) -> str:
+    response = client.messages.create(
+        model="claude-sonnet-4-6", messages=messages, max_tokens=1024
+    )
+    return response.content[0].text
+```
+
+Requires the anthropic package:
+```bash
+pip install "agentic-observability-sdk[anthropic]"
+```
+
+---
+
+### Framework integration summary
+
+| Your agent uses | Function to add | Install extra |
+|---|---|---|
+| **LangChain / LangGraph** | `get_langchain_handler()` → pass as callback | `[langchain]` |
+| **OpenAI SDK directly** | `get_openai_client()` → replaces `openai.OpenAI()` | `[openai]` |
+| **Anthropic SDK directly** | `get_anthropic_client()` → replaces `anthropic.Anthropic()` | `[anthropic]` |
+| **Any other framework** | `@trace_tool` with messages as args (no extra install) | — |
+
+All three are optional — the core SDK (`@trace_agent`, `@trace_tool`, `record_usage`)
+works without any of them installed.
+
+---
+
 ### Minimum complete example
 
 ```python

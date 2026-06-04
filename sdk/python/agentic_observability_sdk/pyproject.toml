@@ -12,7 +12,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.5"]
+# Framework integrations — install whichever your agent uses:
+#   pip install "agentic-observability-sdk[openai]"
+#   pip install "agentic-observability-sdk[anthropic]"
+#   pip install "agentic-observability-sdk[langchain]"
+#   pip install "agentic-observability-sdk[all]"       # everything
+openai    = ["openai>=1.0.0"]
+anthropic = ["anthropic>=0.20.0"]
+langchain = ["langchain-core>=0.1.0"]
+all       = ["openai>=1.0.0", "anthropic>=0.20.0", "langchain-core>=0.1.0"]
+dev       = ["pytest>=8.0", "ruff>=0.5"]
 
 [build-system]
 requires = ["setuptools>=68"]

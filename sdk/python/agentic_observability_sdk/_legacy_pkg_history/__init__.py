@@ -13,8 +13,21 @@ import anywhere outside that module is a review-blocking violation.
 See ``AGENT-ONBOARDING.md`` for the full walkthrough.
 """
 
-from .tracer import get_tracer, shutdown
+from .tracer import get_tracer, shutdown, get_langchain_handler, get_openai_client, get_anthropic_client
 from .decorators import trace_agent, trace_tool
 from .metrics import record_usage
 
-__all__ = ["get_tracer", "trace_agent", "trace_tool", "record_usage", "shutdown"]
+__all__ = [
+    # Core
+    "get_tracer",
+    "shutdown",
+    # Decorators
+    "trace_agent",
+    "trace_tool",
+    # Metrics
+    "record_usage",
+    # Framework integrations (optional deps)
+    "get_langchain_handler",   # requires: langchain-core
+    "get_openai_client",       # requires: openai
+    "get_anthropic_client",    # requires: anthropic
+]
