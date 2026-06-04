@@ -9,7 +9,7 @@ import os
 from functools import lru_cache
 
 from langfuse import Langfuse, get_client, observe  # sole langfuse import point
-from langfuse.callback import CallbackHandler as _LangFuseCallbackHandler
+from langfuse.langchain import CallbackHandler as _LangFuseCallbackHandler
 
 
 @lru_cache(maxsize=1)
@@ -84,10 +84,10 @@ def get_langchain_handler() -> "_LangFuseCallbackHandler":
     uninstrumented code paths don't raise.
     """
     try:
-        return get_client().get_langchain_handler()
+        # v3: CallbackHandler auto-binds to the active span context — no
+        # get_client().get_langchain_handler() method exists in v3.
+        return _LangFuseCallbackHandler()
     except Exception:
-        # Outside a trace context or LangFuse not initialised — return a
-        # bare handler that records nothing rather than crashing the agent.
         return _LangFuseCallbackHandler()
 
 
@@ -132,38 +132,24 @@ def get_openai_client(**kwargs):
 def get_anthropic_client(**kwargs):
     """Return a LangFuse-instrumented Anthropic client.
 
-    Drop-in replacement for ``anthropic.Anthropic(**kwargs)``. Every
-    ``client.messages.create()`` call is automatically recorded as a
-    LangFuse generation observation — exact messages, model, token counts,
-    stop reason — nested under the current ``@trace_agent`` span.
+    NOTE: langfuse 3.15.0 does not ship a ``langfuse.anthropic`` wrapper —
+    this function will raise NotImplementedError until LangFuse adds it.
+    Track: https://github.com/langfuse/langfuse-python/issues
 
-    Requires the anthropic package:
-        pip install "agentic-observability-sdk[anthropic]"
-        # or: pip install anthropic
+    For Anthropic agents on v3, instrument via @trace_tool with messages
+    as explicit args so they cross the function boundary and are recorded:
 
-    Usage:
-        from agentic_observability_sdk import get_anthropic_client
-
-        client = get_anthropic_client()   # replaces anthropic.Anthropic()
-
-        @trace_agent(name="my-agent")
-        def run(messages):
+        @trace_tool(name="llm-call")
+        def call_claude(messages: list) -> str:
+            client = anthropic.Anthropic()
             return client.messages.create(
                 model="claude-sonnet-4-6", messages=messages, max_tokens=1024
             ).content[0].text
-
-    Must be called after get_tracer() so LangFuse is initialised.
-    Pass any kwargs accepted by anthropic.Anthropic() (api_key, base_url, etc.).
     """
-    try:
-        from langfuse.anthropic import Anthropic
-        return Anthropic(**kwargs)
-    except ImportError as exc:
-        raise ImportError(
-            "Anthropic integration requires the anthropic package.\n"
-            "Run: pip install \"agentic-observability-sdk[anthropic]\""
-            " or pip install anthropic"
-        ) from exc
+    raise NotImplementedError(
+        "langfuse 3.15.0 does not include a langfuse.anthropic wrapper.\n"
+        "Use @trace_tool with messages as explicit args instead — see docstring."
+    )
 
 
 # Re-export langfuse helpers so decorators.py never imports langfuse directly.

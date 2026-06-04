@@ -251,28 +251,32 @@ pip install "agentic-observability-sdk[openai]"
 
 ---
 
-### 4f. Capture Anthropic SDK calls (direct, non-LangChain)
+### 4f. Anthropic SDK calls (direct, non-LangChain)
 
-Use `get_anthropic_client()` as a drop-in replacement for `anthropic.Anthropic()`:
+> **Note:** `langfuse 3.15.0` does not ship a `langfuse.anthropic` wrapper.
+> `get_anthropic_client()` raises `NotImplementedError` until LangFuse adds it.
+> Track: https://github.com/langfuse/langfuse-python/issues
+
+In the meantime, use `@trace_tool` and pass `messages` as an explicit argument.
+That makes the full prompt cross the function boundary so LangFuse records it:
 
 ```python
-from agentic_observability_sdk import get_anthropic_client
+import anthropic
+from agentic_observability_sdk import trace_tool
 
-# Replaces: from anthropic import Anthropic; client = Anthropic()
-client = get_anthropic_client()
+_client = anthropic.Anthropic()
 
-@trace_agent(name="my-agent")
-def run(messages: list) -> str:
-    response = client.messages.create(
-        model="claude-sonnet-4-6", messages=messages, max_tokens=1024
+@trace_tool(name="llm-call")
+def call_claude(messages: list, model: str = "claude-sonnet-4-6") -> str:
+    response = _client.messages.create(
+        model=model, messages=messages, max_tokens=1024
     )
     return response.content[0].text
 ```
 
-Requires the anthropic package:
-```bash
-pip install "agentic-observability-sdk[anthropic]"
-```
+LangFuse records `messages` as the span input and the returned string as the
+output. Token counts won't be automatic (unlike the OpenAI wrapper), but the
+full prompt is visible.
 
 ---
 
@@ -282,8 +286,8 @@ pip install "agentic-observability-sdk[anthropic]"
 |---|---|---|
 | **LangChain / LangGraph** | `get_langchain_handler()` → pass as callback | `[langchain]` |
 | **OpenAI SDK directly** | `get_openai_client()` → replaces `openai.OpenAI()` | `[openai]` |
-| **Anthropic SDK directly** | `get_anthropic_client()` → replaces `anthropic.Anthropic()` | `[anthropic]` |
-| **Any other framework** | `@trace_tool` with messages as args (no extra install) | — |
+| **Anthropic SDK directly** | `@trace_tool` with messages as args (see §4f) | — |
+| **Any other framework** | `@trace_tool` with messages as args | — |
 
 All three are optional — the core SDK (`@trace_agent`, `@trace_tool`, `record_usage`)
 works without any of them installed.
