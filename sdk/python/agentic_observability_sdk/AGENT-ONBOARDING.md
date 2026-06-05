@@ -253,30 +253,56 @@ pip install "agentic-observability-sdk[openai]"
 
 ### 4f. Anthropic SDK calls (direct, non-LangChain)
 
-> **Note:** `langfuse 3.15.0` does not ship a `langfuse.anthropic` wrapper.
-> `get_anthropic_client()` raises `NotImplementedError` until LangFuse adds it.
-> Track: https://github.com/langfuse/langfuse-python/issues
+LangFuse v3 does not ship a `langfuse.anthropic` wrapper. The official supported
+path is **OpenInference's `AnthropicInstrumentor`**, which monkey-patches the
+`anthropic` SDK at process level — no per-call changes needed.
 
-In the meantime, use `@trace_tool` and pass `messages` as an explicit argument.
-That makes the full prompt cross the function boundary so LangFuse records it:
+`get_anthropic_client()` handles this automatically:
 
 ```python
-import anthropic
-from agentic_observability_sdk import trace_tool
+from agentic_observability_sdk import get_anthropic_client
 
-_client = anthropic.Anthropic()
+client = get_anthropic_client()   # instruments the anthropic SDK, returns Anthropic()
 
-@trace_tool(name="llm-call")
-def call_claude(messages: list, model: str = "claude-sonnet-4-6") -> str:
-    response = _client.messages.create(
-        model=model, messages=messages, max_tokens=1024
-    )
-    return response.content[0].text
+@trace_agent(name="my-agent")
+def run(messages: list) -> str:
+    # Every call below is auto-recorded — messages, model, tokens, stop reason
+    return client.messages.create(
+        model="claude-sonnet-4-6", messages=messages, max_tokens=1024
+    ).content[0].text
 ```
 
-LangFuse records `messages` as the span input and the returned string as the
-output. Token counts won't be automatic (unlike the OpenAI wrapper), but the
-full prompt is visible.
+```bash
+pip install "agentic-observability-sdk[anthropic]"
+```
+
+**Alternative — OpenAI-compatible endpoint (no extra install):**
+
+Anthropic natively supports the OpenAI API surface, so `get_openai_client()`
+works for Claude models if you point it at Anthropic's endpoint:
+
+```python
+import os
+from agentic_observability_sdk import get_openai_client
+
+client = get_openai_client(
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    base_url="https://api.anthropic.com/v1",
+)
+
+@trace_agent(name="my-agent")
+def run(messages: list) -> str:
+    return client.chat.completions.create(
+        model="claude-sonnet-4-6", messages=messages
+    ).choices[0].message.content
+```
+
+**When to use which path:**
+
+| Path | Install | Claude-specific features | Recommendation |
+|---|---|---|---|
+| `get_anthropic_client()` | `[anthropic]` | ✅ Full native SDK | Default choice |
+| `get_openai_client(base_url=...)` | `[openai]` | ❌ OpenAI surface only | Only if already using OpenAI client and want zero extra deps |
 
 ---
 
@@ -286,7 +312,7 @@ full prompt is visible.
 |---|---|---|
 | **LangChain / LangGraph** | `get_langchain_handler()` → pass as callback | `[langchain]` |
 | **OpenAI SDK directly** | `get_openai_client()` → replaces `openai.OpenAI()` | `[openai]` |
-| **Anthropic SDK directly** | `@trace_tool` with messages as args (see §4f) | — |
+| **Anthropic SDK directly** | `get_anthropic_client()` → instruments native SDK via OpenInference | `[anthropic]` |
 | **Any other framework** | `@trace_tool` with messages as args | — |
 
 All three are optional — the core SDK (`@trace_agent`, `@trace_tool`, `record_usage`)

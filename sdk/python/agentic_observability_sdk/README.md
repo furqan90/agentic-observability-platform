@@ -66,8 +66,15 @@ from agentic_observability_sdk import get_openai_client
 client = get_openai_client()
 client.chat.completions.create(model="gpt-4o", messages=messages)
 
-# Anthropic SDK — langfuse 3.x has no wrapper yet; use @trace_tool instead
-# (see AGENT-ONBOARDING.md §4f)
+# Anthropic SDK — via OpenInference auto-instrumentation (full native SDK)
+from agentic_observability_sdk import get_anthropic_client
+client = get_anthropic_client()   # instruments anthropic at process level
+client.messages.create(model="claude-sonnet-4-6", messages=messages, max_tokens=1024)
+
+# -- OR -- via OpenAI-compatible endpoint (no extra install, limited surface)
+client = get_openai_client(api_key=os.environ["ANTHROPIC_API_KEY"],
+                           base_url="https://api.anthropic.com/v1")
+client.chat.completions.create(model="claude-sonnet-4-6", messages=messages)
 ```
 
 Install only what your agent uses:
