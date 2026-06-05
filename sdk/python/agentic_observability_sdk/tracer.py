@@ -12,14 +12,70 @@ from langfuse import Langfuse, get_client, observe  # sole langfuse import point
 from langfuse.langchain import CallbackHandler as _LangFuseCallbackHandler
 
 
+def _init_otel_trace_provider() -> None:
+    """Set up the global OTel TracerProvider → Collector BEFORE LangFuse initialises.
+
+    Without this, Langfuse(host=...) creates its own TracerProvider that sends
+    spans directly to LangFuse, bypassing the Collector — which means:
+      - PII redaction processor never runs
+      - spanmetrics connector never fires (no RED metrics in Grafana)
+      - The "one wire-level swap point" architectural rule is violated
+
+    When OTEL_EXPORTER_OTLP_ENDPOINT is set (pointing at the Collector on :4318),
+    this wires the global TracerProvider to route ALL spans through the Collector.
+    LangFuse v3 detects the existing global provider and adds its span processor
+    to it rather than creating a new direct-to-LangFuse one.
+
+    When OTEL_EXPORTER_OTLP_ENDPOINT is unset (local dev without a Collector),
+    this is a no-op and LangFuse falls back to its direct path — acceptable for
+    local development where the full stack isn't running.
+    """
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if not endpoint:
+        return
+
+    from opentelemetry import trace as otel_trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.resources import Resource
+
+    # Only configure if not already set — preserves any host-level OTel setup.
+    existing = otel_trace.get_tracer_provider()
+    if type(existing).__name__ not in ("ProxyTracerProvider", "NoOpTracerProvider"):
+        return  # already configured by host or a prior call
+
+    resource = Resource.create({
+        "service.name": os.environ.get("OTEL_SERVICE_NAME", "platform-agent"),
+        "deployment.environment": os.environ.get("DEPLOY_ENV", "local"),
+    })
+    # /v1/traces is the standard OTLP HTTP traces path
+    exporter = OTLPSpanExporter(endpoint=f"{endpoint.rstrip('/')}/v1/traces")
+    provider = TracerProvider(resource=resource)
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    otel_trace.set_tracer_provider(provider)
+
+
 @lru_cache(maxsize=1)
 def get_tracer() -> "Langfuse":
-    """Initialise LangFuse + OTel metrics. Idempotent — safe to call multiple times.
+    """Initialise LangFuse + OTel. Idempotent — safe to call multiple times.
 
     Call once at agent startup:
         from agentic_observability_sdk import get_tracer
         get_tracer()
+
+    Trace path (when OTEL_EXPORTER_OTLP_ENDPOINT is set):
+        @trace_agent → OTel TracerProvider → Collector :4318
+                         → PII redaction → LangFuse (traces + evals)
+                         → spanmetrics → Prometheus → Grafana (RED)
+
+    Trace path (when OTEL_EXPORTER_OTLP_ENDPOINT is unset — local dev only):
+        @trace_agent → LangFuse TracerProvider → LangFuse :3000 directly
+        (no PII redaction, no spanmetrics — acceptable without a Collector)
     """
+    # Must happen BEFORE Langfuse() — see _init_otel_trace_provider docstring.
+    _init_otel_trace_provider()
+
     Langfuse(
         public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
         secret_key=os.environ["LANGFUSE_SECRET_KEY"],
@@ -27,8 +83,7 @@ def get_tracer() -> "Langfuse":
         environment=os.environ.get("DEPLOY_ENV", "local"),
     )
 
-    # Wire token/cost metrics to the OTel Collector -> Prometheus -> Grafana.
-    # Lazy import keeps this file the sole langfuse swap point.
+    # Metrics path: token/cost counters → Collector → Prometheus → Grafana.
     from .metrics import init_metrics
     init_metrics()
 
@@ -45,11 +100,22 @@ def shutdown() -> None:
         from agentic_observability_sdk import shutdown
         atexit.register(shutdown)
     """
+    # Flush LangFuse REST queue (scores, datasets, etc.)
     try:
         get_client().flush()
     except Exception:
         pass
 
+    # Flush + shut down OTel trace provider (spans in BatchSpanProcessor buffer)
+    try:
+        from opentelemetry import trace as otel_trace
+        provider = otel_trace.get_tracer_provider()
+        if hasattr(provider, "shutdown"):
+            provider.shutdown()
+    except Exception:
+        pass
+
+    # Flush + shut down OTel metric provider (cost/token counters)
     try:
         from opentelemetry import metrics as otel_metrics
         provider = otel_metrics.get_meter_provider()
