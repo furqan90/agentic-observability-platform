@@ -14,10 +14,10 @@ Instrumentation facade for all  agent projects.
 
 ```bash
 # From the platform repo (local / monorepo)
-pip install -e ./agentic_observability_sdk
+pip install -e ./sdk/python
 
 # From GitHub (agent projects outside the monorepo)
-pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=agentic_observability_sdk"
+pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python"
 ```
 
 ### Five env vars (set on every agent host)

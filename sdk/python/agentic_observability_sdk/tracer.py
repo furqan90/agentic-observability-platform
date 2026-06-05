@@ -183,6 +183,44 @@ def get_anthropic_client(**kwargs):
         ) from exc
 
 
+def get_propagation_headers() -> dict:
+    """Return W3C Trace Context headers for cross-agent handoff.
+
+    Call this in agent A before handing off to agent B. Pass the returned
+    dict to agent B (via HTTP headers, message metadata, etc.) and call
+    restore_propagation_context() there to link both agents under the same
+    session trace in LangFuse.
+
+        # Agent A (before handoff)
+        headers = get_propagation_headers()
+        requests.post(agent_b_url, headers=headers, json=payload)
+
+        # Agent B (at startup of the new invocation)
+        restore_propagation_context(request.headers)
+
+    See CONTRACT.md §6 for the full cross-agent session stitching design.
+    """
+    from opentelemetry import propagate
+    carrier: dict = {}
+    propagate.inject(carrier)
+    return carrier
+
+
+def restore_propagation_context(headers: dict) -> None:
+    """Restore W3C Trace Context from headers received at a handoff boundary.
+
+    Call this at the start of agent B's invocation with the headers dict
+    received from agent A. This links agent B's spans as children of agent A's
+    trace so LangFuse shows them as one connected session.
+
+        # Agent B (at start of invocation)
+        restore_propagation_context(request.headers)
+        get_tracer()  # must be called after context is restored
+    """
+    from opentelemetry import propagate
+    propagate.extract(headers)
+
+
 # Re-export langfuse helpers so decorators.py never imports langfuse directly.
 # This keeps the "one langfuse import file" rule intact.
 _observe = observe

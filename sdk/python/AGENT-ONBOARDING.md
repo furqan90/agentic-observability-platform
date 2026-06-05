@@ -32,26 +32,26 @@ a backend swap from becoming a multi-repo emergency.
 **Option A — from the platform repo (local/monorepo):**
 
 ```bash
-pip install -e /path/to/agentic-observability-platform/agentic_observability_sdk
+pip install -e /path/to/agentic-observability-platform/sdk/python
 ```
 
 **Option B — from a Git URL (recommended for agent projects outside the monorepo):**
 
 ```bash
-pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=agentic_observability_sdk"
+pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python"
 ```
 
 **Option C — pin in `requirements.txt` or `pyproject.toml`:**
 
 ```
 # requirements.txt
-agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=agentic_observability_sdk
+agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python
 ```
 
 ```toml
 # pyproject.toml
 dependencies = [
-    "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=agentic_observability_sdk",
+    "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python",
 ]
 ```
 
