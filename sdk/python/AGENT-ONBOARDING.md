@@ -14,10 +14,17 @@ Your agent emits OpenTelemetry spans and counters. They travel to a central
 ```
 Your agent
   │
-  ├── spans (traces) ──OTLP──► OTel Collector :4318 ──► LangFuse  (trace / eval / cost)
-  └── metrics        ──OTLP──► OTel Collector :4318 ──► Prometheus (RED metrics + cost)
-                                                        └──► Grafana (dashboards + alerts)
+  ├── @trace_agent / @trace_tool ──OTLP──► Collector :4318 ──► PII redaction
+  │                                                          ──► LangFuse  (trace / eval / cost)
+  │                                                          ──► spanmetrics → Prometheus
+  │
+  └── record_usage() ─────────────OTLP──► Collector :4318 ──► Prometheus (cost counters)
+                                                              └──► Grafana (dashboards + alerts)
 ```
+
+**The Collector is the only path out.** This is not optional — sending traces directly
+to LangFuse bypasses PII redaction and the spanmetrics connector that feeds Grafana.
+The SDK enforces this when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (see Step 3).
 
 The `agentic_observability_sdk` package is a thin facade over LangFuse v3 + the OTel SDK.
 You import it — never `langfuse` directly. That single rule is what keeps
@@ -101,12 +108,21 @@ DEPLOY_ENV=local              # examples: local  client-acme  aks-prod  teams-bo
 | Docker container in the same Compose stack | `otel-collector` (service name) |
 | Client VM phoning home | Public IP / domain of the platform ingress |
 
-> **Important:** `LANGFUSE_HOST` and `OTEL_EXPORTER_OTLP_ENDPOINT` point at
-> **different ports** for a reason. `LANGFUSE_HOST` is only used by the SDK
-> to validate your API keys. `OTEL_EXPORTER_OTLP_ENDPOINT` is where spans
-> actually travel — it must point at the **Collector** (`:4318`), not at
-> LangFuse directly (`:3000`). Pointing spans straight at LangFuse bypasses
-> the Collector's PII redaction and the `spanmetrics` fan-out that feeds Grafana.
+> **`LANGFUSE_HOST` vs `OTEL_EXPORTER_OTLP_ENDPOINT` — they do different things:**
+>
+> - `LANGFUSE_HOST` (`:3000`) — used by the LangFuse SDK for REST calls only
+>   (scoring, dataset management, eval). Not the trace export path.
+> - `OTEL_EXPORTER_OTLP_ENDPOINT` (`:4318`) — this is where spans and metrics
+>   actually travel. Must point at the **Collector**, not LangFuse directly.
+>
+> **What `get_tracer()` does with these vars:**
+> When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, `get_tracer()` configures a global
+> OTel `TracerProvider` pointing at the Collector *before* initialising LangFuse.
+> LangFuse v3 detects the existing provider and uses it — meaning every
+> `@trace_agent` span travels Agent → Collector → PII redaction → LangFuse.
+> When `OTEL_EXPORTER_OTLP_ENDPOINT` is **not** set (local dev without a Collector),
+> `get_tracer()` falls back to a direct LangFuse connection — traces arrive but
+> PII redaction and spanmetrics are skipped. Acceptable for dev; never for production.
 
 ---
 
@@ -118,13 +134,25 @@ DEPLOY_ENV=local              # examples: local  client-acme  aks-prod  teams-bo
 import atexit
 from agentic_observability_sdk import get_tracer, shutdown
 
-get_tracer()              # registers LangFuse + OTel provider (memoised — safe to call repeatedly)
-atexit.register(shutdown) # flushes buffered spans/metrics cleanly on process exit
+get_tracer()               # one call wires everything — see below
+atexit.register(shutdown)  # flushes all buffered spans/metrics on process exit
 ```
 
+**What `get_tracer()` does in order:**
+
+1. Reads `OTEL_EXPORTER_OTLP_ENDPOINT` — if set, configures the global OTel
+   `TracerProvider` to route all spans to the Collector (`/v1/traces`). This
+   MUST happen before LangFuse initialises so LangFuse uses this provider
+   rather than creating a direct-to-LangFuse one.
+2. Calls `Langfuse(host=LANGFUSE_HOST)` — initialises the LangFuse client for
+   REST operations (scoring, datasets, evals). After step 1, LangFuse attaches
+   to the existing Collector-bound `TracerProvider` rather than creating its own.
+3. Calls `init_metrics()` — sets up the OTel `MetricProvider` for `record_usage()`
+   counters, also pointing at the Collector.
+
 Put this at the top of your entry point (`main.py`, `app.py`, FastAPI lifespan, etc.).
-The `atexit` registration is especially important for CLI tools or short-lived scripts
-where the process may exit before the export buffer flushes automatically.
+The `atexit` registration is critical for CLI tools or short-lived scripts — without it,
+spans buffered in the `BatchSpanProcessor` may not flush before the process exits.
 
 ### 4b. Wrap agent entry points with `@trace_agent`
 
@@ -349,7 +377,56 @@ if __name__ == "__main__":
 
 ---
 
-## Step 5 — Verify the connection
+## Step 5 — Verify the Collector path is active
+
+Before checking LangFuse and Grafana, confirm spans are routing through the
+Collector and not going direct. This is the most important check.
+
+### Confirm the Collector is reachable
+
+```bash
+curl -s http://<platform-host>:4318/health/status
+# Expected: {"status":"Serving"}
+```
+
+### Confirm the trace path in Python
+
+Run this snippet in your agent's environment. It prints which path `get_tracer()`
+configured without needing to send a real trace:
+
+```python
+import os
+os.environ["LANGFUSE_PUBLIC_KEY"] = "pk-lf-local"
+os.environ["LANGFUSE_SECRET_KEY"] = "sk-lf-local"
+os.environ["LANGFUSE_HOST"]       = "http://<platform-host>:3000"
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "http://<platform-host>:4318"
+
+from agentic_observability_sdk import get_tracer
+from opentelemetry import trace as otel_trace
+
+get_tracer()
+
+provider = otel_trace.get_tracer_provider()
+print("TracerProvider:", type(provider).__name__)
+# Expected: TracerProvider  (the OTel SDK class — Collector path is active)
+# Wrong:    ProxyTracerProvider  (OTEL_EXPORTER_OTLP_ENDPOINT was not set)
+```
+
+### Send a test trace (use the platform script)
+
+From the platform repo root:
+
+```bash
+# Set env vars, then run:
+python scripts/send_test_trace.py
+```
+
+This sends a synthetic agent trace and checks that it arrives in both LangFuse
+and Prometheus. See the script for full output and manual verification steps.
+
+---
+
+## Step 6 — Verify the connection
 
 ### Check LangFuse
 

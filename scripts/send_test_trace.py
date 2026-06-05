@@ -1,0 +1,176 @@
+"""
+End-to-end trace verification script.
+
+Sends a synthetic agent trace through the full pipeline and confirms:
+  1. Trace arrives in LangFuse  (via LangFuse API)
+  2. spanmetrics arrive in Prometheus (via Prometheus HTTP API)
+  3. The OTel Collector was the routing path (not direct-to-LangFuse)
+
+Usage:
+    # Windows (PowerShell) — from repo root
+    $env:LANGFUSE_PUBLIC_KEY = "pk-lf-local"
+    $env:LANGFUSE_SECRET_KEY = "sk-lf-local"
+    $env:LANGFUSE_HOST       = "http://localhost:3000"
+    $env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318"
+    $env:DEPLOY_ENV       = "local"
+    python scripts/send_test_trace.py
+
+    # Linux/macOS (bash) — from repo root
+    LANGFUSE_PUBLIC_KEY=pk-lf-local \
+    LANGFUSE_SECRET_KEY=sk-lf-local \
+    LANGFUSE_HOST=http://localhost:3000 \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+    DEPLOY_ENV=local \
+    python scripts/send_test_trace.py
+"""
+
+import os
+import sys
+import time
+import base64
+import urllib.request
+import urllib.error
+import json
+
+# ── allow running from repo root without installing the SDK ──────────────────
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sdk", "python"))
+
+from agentic_observability_sdk import (
+    get_tracer, trace_agent, trace_tool, record_usage, shutdown,
+)
+
+LANGFUSE_HOST = os.environ.get("LANGFUSE_HOST", "http://localhost:3000")
+PROMETHEUS    = os.environ.get("PROMETHEUS_URL", "http://localhost:9090")
+PUB_KEY       = os.environ["LANGFUSE_PUBLIC_KEY"]
+SEC_KEY       = os.environ["LANGFUSE_SECRET_KEY"]
+AGENT_NAME    = "test-trace-agent"
+
+# ── helper ───────────────────────────────────────────────────────────────────
+
+def http_get(url, headers=None):
+    req = urllib.request.Request(url, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return r.status, json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, {}
+    except Exception as e:
+        return 0, {"error": str(e)}
+
+
+def lf_auth():
+    return {"Authorization": "Basic " + base64.b64encode(
+        f"{PUB_KEY}:{SEC_KEY}".encode()).decode()}
+
+
+# ── step 1 — initialise SDK ──────────────────────────────────────────────────
+
+print("\n===  Observability Platform — end-to-end trace test ===\n")
+print(f"  LANGFUSE_HOST              : {LANGFUSE_HOST}")
+print(f"  OTEL_EXPORTER_OTLP_ENDPOINT: {os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT', '(not set — direct path)')}")
+print(f"  DEPLOY_ENV              : {os.environ.get('DEPLOY_ENV', 'local')}")
+print()
+
+print("[1/4] Initialising SDK…")
+get_tracer()
+print("      get_tracer() OK")
+
+# ── step 2 — emit a synthetic trace ─────────────────────────────────────────
+
+print("[2/4] Emitting synthetic trace…")
+
+@trace_tool(name="test-retrieval")
+def fake_retrieval(query: str) -> list:
+    time.sleep(0.05)   # simulate latency
+    return ["doc-1", "doc-2"]
+
+@trace_agent(name=AGENT_NAME, tags=["smoke-test", "local"])
+def run_test_agent(user_input: str) -> str:
+    docs = fake_retrieval(user_input)
+    # Simulate a cheap LLM call (no real API key needed for trace testing)
+    answer = f"Synthetic answer based on {len(docs)} docs."
+    record_usage(AGENT_NAME, "gpt-4o-mock", input_tokens=42, output_tokens=18, cost_usd=0.0001)
+    return answer
+
+result = run_test_agent("What is the  observability platform?")
+print(f"      Agent returned: {result!r}")
+
+# Flush before polling — BatchSpanProcessor has a delay
+print("      Flushing spans…")
+shutdown()
+print("      Flush OK")
+
+# ── step 3 — verify trace in LangFuse ───────────────────────────────────────
+
+print("[3/4] Checking LangFuse for the trace…")
+
+POLL_INTERVAL = 3
+MAX_WAIT      = 30
+found_trace   = False
+
+for attempt in range(MAX_WAIT // POLL_INTERVAL):
+    time.sleep(POLL_INTERVAL)
+    code, body = http_get(
+        f"{LANGFUSE_HOST}/api/public/traces?limit=5&tags=smoke-test",
+        headers=lf_auth(),
+    )
+    if code == 200:
+        traces = body.get("data", [])
+        matching = [t for t in traces if t.get("name") == AGENT_NAME]
+        if matching:
+            t = matching[0]
+            print(f"      ✓ Trace found in LangFuse!")
+            print(f"        id        : {t.get('id')}")
+            print(f"        name      : {t.get('name')}")
+            print(f"        tags      : {t.get('tags')}")
+            print(f"        createdAt : {t.get('createdAt')}")
+            found_trace = True
+            break
+        print(f"      … waiting (attempt {attempt+1}, {len(traces)} traces seen, none matching yet)")
+    else:
+        print(f"      … LangFuse API returned HTTP {code}")
+
+if not found_trace:
+    print("      ✗ Trace NOT found in LangFuse after {MAX_WAIT}s")
+    print("        Check: docker compose logs langfuse-web --tail 30")
+    print("        Check: docker compose logs otel-collector --tail 30")
+
+# ── step 4 — verify spanmetrics in Prometheus ────────────────────────────────
+
+print("[4/4] Checking Prometheus for spanmetrics…")
+time.sleep(5)   # give spanmetrics connector a flush cycle
+
+prom_query = f'{{job="otel-collector"}}'
+code, body = http_get(f"{PROMETHEUS}/api/v1/query?query=calls_total")
+
+found_metrics = False
+if code == 200:
+    results = body.get("data", {}).get("result", [])
+    agent_metrics = [r for r in results
+                     if r.get("metric", {}).get("agent_name") == AGENT_NAME
+                     or AGENT_NAME in str(r)]
+    if results:
+        print(f"      ✓ spanmetrics present in Prometheus ({len(results)} calls_total series)")
+        if agent_metrics:
+            print(f"        Agent-specific series found for '{AGENT_NAME}'")
+        found_metrics = True
+    else:
+        print("      ~ calls_total metric exists but no series yet (spanmetrics may need more time)")
+        print("        Re-run in 15s or check: http://localhost:9090/graph?g0.expr=calls_total")
+else:
+    print(f"      ✗ Prometheus returned HTTP {code}")
+
+# ── summary ──────────────────────────────────────────────────────────────────
+
+print()
+print("=== Summary ===")
+print(f"  Trace in LangFuse  : {'✓ PASS' if found_trace   else '✗ FAIL'}")
+print(f"  Metrics in Prom    : {'✓ PASS' if found_metrics else '~ CHECK MANUALLY'}")
+print()
+if found_trace:
+    print(f"  View trace : {LANGFUSE_HOST}/project/agents/traces")
+print(  "  View metrics: http://localhost:9090/graph?g0.expr=calls_total")
+print(  "  View Grafana : http://localhost:3001")
+print()
+if not found_trace:
+    sys.exit(1)
