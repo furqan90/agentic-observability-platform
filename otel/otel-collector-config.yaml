@@ -2,10 +2,12 @@
 #
 # The fan-out heart of the platform:
 #   • spans  → LangFuse v3 via its native OTLP endpoint (tracing / eval / cost)
-#   • spans  → spanmetrics connector → RED metrics → Prometheus (ops)
+#   • spans  → span_metrics connector → RED metrics → Prometheus (ops)
+#   • push metrics (token/cost counters from SDK) → otlp receiver → Prometheus
 #
-# The spanmetrics connector produces stable metric names (calls_total,
-# duration_milliseconds_bucket) that Prometheus scrapes from :8889.
+# Metric naming (Collector v0.153.0+):
+#   calls_total  →  traces_span_metrics_calls_total
+#   duration_milliseconds  →  traces_span_metrics_duration_milliseconds
 
 receivers:
   otlp:
@@ -14,7 +16,8 @@ receivers:
       http: { endpoint: 0.0.0.0:4318 }
 
 connectors:
-  spanmetrics:
+  # "spanmetrics" alias is deprecated in v0.153.0+; use "span_metrics"
+  span_metrics:
     histogram:
       explicit:
         buckets: [50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s, 30s]
@@ -38,7 +41,8 @@ processors:
 
 exporters:
   # Traces → LangFuse via its native OTLP endpoint.
-  otlphttp/langfuse:
+  # "otlphttp" alias deprecated in v0.153.0+; use "otlp_http"
+  otlp_http/langfuse:
     endpoint: http://langfuse-web:3000/api/public/otel
     headers:
       # base64("public_key:secret_key") — injected from the LANGFUSE_OTEL_AUTH env var.
@@ -54,8 +58,10 @@ service:
     traces:
       receivers: [otlp]
       processors: [attributes/redaction, resource, batch]
-      exporters: [otlphttp/langfuse, spanmetrics]
+      exporters: [otlp_http/langfuse, span_metrics]
     metrics:
-      receivers: [spanmetrics]
+      # otlp: accepts push metrics from SDK (token/cost counters via OTLP /v1/metrics)
+      # span_metrics: receives RED metrics generated from the traces pipeline above
+      receivers: [otlp, span_metrics]
       processors: [batch]
       exporters: [prometheus]
