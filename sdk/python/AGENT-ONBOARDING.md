@@ -36,6 +36,16 @@ a backend swap from becoming a multi-repo emergency.
 
 `agentic-observability-sdk` ships as a proper pip-installable package. No folder copying needed.
 
+> **Python version requirement:** Python **3.10–3.13** only.
+> LangFuse 3.x uses a `pydantic.v1` compatibility shim that is broken in Python 3.14+.
+> If your system Python is 3.14, create a virtual environment with Python 3.12:
+> ```bash
+> py -3.12 -m venv .venv          # Windows (Python Launcher)
+> python3.12 -m venv .venv        # Linux / macOS
+> source .venv/bin/activate        # Linux / macOS
+> .venv\Scripts\Activate.ps1      # Windows PowerShell
+> ```
+
 **Option A — from the platform repo (local/monorepo):**
 
 ```bash
@@ -60,6 +70,16 @@ agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observabilit
 dependencies = [
     "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python",
 ]
+```
+
+**Upgrading an existing install:**
+
+pip caches git installs by commit hash, so `--upgrade` alone won't pull new commits.
+Use `--force-reinstall`:
+
+```bash
+pip install --force-reinstall \
+  "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python"
 ```
 
 ---
@@ -247,7 +267,7 @@ result = llm_with_tools.invoke(messages)
 > automatically nests the LLM observation under that trace. Outside a trace
 > it returns a bare handler that records nothing rather than raising.
 
-Requires the langchain-core package:
+Requires the full `langchain` package (not just `langchain-core`):
 ```bash
 pip install "agentic-observability-sdk[langchain]"
 ```
@@ -433,6 +453,20 @@ and Prometheus. See the script for full output and manual verification steps.
 1. Open **http://\<platform-host\>:3000** and log in.
 2. Go to **Agent Platform → Traces**.
 3. Run your agent once — a new trace should appear within a few seconds.
+
+### Check Prometheus
+
+```bash
+# spanmetrics — rate of agent/tool invocations (auto-generated from every span)
+curl -s "http://<platform-host>:9090/api/v1/query?query=traces_span_metrics_calls_total" \
+  | python3 -m json.tool | grep span_name
+
+# cost/token counters — only present if record_usage() was called
+curl -s "http://<platform-host>:9090/api/v1/query?query=agent_tokens_total" \
+  | python3 -m json.tool | grep agent_name
+```
+
+Or browse: `http://<platform-host>:9090/graph?g0.expr=traces_span_metrics_calls_total`
 
 ### Check Grafana
 
