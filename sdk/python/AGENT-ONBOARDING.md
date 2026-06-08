@@ -36,12 +36,10 @@ a backend swap from becoming a multi-repo emergency.
 
 `agentic-observability-sdk` ships as a proper pip-installable package. No folder copying needed.
 
-> **Python version requirement:** Python **3.10–3.13** only.
-> LangFuse 3.x uses a `pydantic.v1` compatibility shim that is broken in Python 3.14+.
-> If your system Python is 3.14, create a virtual environment with Python 3.12:
+> **Python version requirement:** Python **3.10+** (including 3.14).
+> A virtual environment is recommended to isolate dependencies:
 > ```bash
-> py -3.12 -m venv .venv          # Windows (Python Launcher)
-> python3.12 -m venv .venv        # Linux / macOS
+> python -m venv .venv
 > source .venv/bin/activate        # Linux / macOS
 > .venv\Scripts\Activate.ps1      # Windows PowerShell
 > ```
@@ -160,14 +158,13 @@ atexit.register(shutdown)  # flushes all buffered spans/metrics on process exit
 
 **What `get_tracer()` does in order:**
 
-1. Reads `OTEL_EXPORTER_OTLP_ENDPOINT` — if set, configures the global OTel
-   `TracerProvider` to route all spans to the Collector (`/v1/traces`). This
-   MUST happen before LangFuse initialises so LangFuse uses this provider
-   rather than creating a direct-to-LangFuse one.
-2. Calls `Langfuse(host=LANGFUSE_HOST)` — initialises the LangFuse client for
-   REST operations (scoring, datasets, evals). After step 1, LangFuse attaches
-   to the existing Collector-bound `TracerProvider` rather than creating its own.
-3. Calls `init_metrics()` — sets up the OTel `MetricProvider` for `record_usage()`
+1. Reads `OTEL_EXPORTER_OTLP_ENDPOINT` — if set, builds an OTLPSpanExporter
+   pointing at the Collector (`/v1/traces`) and passes it directly to `Langfuse()`.
+   LangFuse uses this exporter instead of its default direct-to-LangFuse one,
+   so every span travels Agent → Collector → PII redaction → LangFuse.
+2. Calls `Langfuse(span_exporter=..., host=LANGFUSE_HOST)` — initialises LangFuse
+   and sets the global OTel `TracerProvider` with the Collector-bound exporter.
+3. Calls `init_metrics()` — sets up the OTel `MeterProvider` for `record_usage()`
    counters, also pointing at the Collector.
 
 Put this at the top of your entry point (`main.py`, `app.py`, FastAPI lifespan, etc.).

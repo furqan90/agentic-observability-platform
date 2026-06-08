@@ -1,8 +1,8 @@
 """
-@trace_agent  — wraps a function as a named LangFuse trace (root observation).
-                Works with both sync and async functions.
-@trace_tool   — wraps a tool call as a child span.
-                Works with both sync and async functions.
+@trace_agent  -- wraps a function as a named LangFuse trace (root observation).
+                 Works with both sync and async functions.
+@trace_tool   -- wraps a tool call as a child span.
+                 Works with both sync and async functions.
 
 Usage:
     from agentic_observability_sdk import trace_agent, trace_tool
@@ -13,15 +13,15 @@ Usage:
     @trace_tool(name="vector-search")
     def search(query: str) -> list: ...
 
-Note: langfuse is imported through tracer.py — never directly — so this module
+Note: langfuse is imported through tracer.py -- never directly -- so this module
 stays clean of the langfuse dependency and the swap-point rule is preserved.
 """
 
 import asyncio
 from functools import wraps
 
-# Import via tracer.py — the sole langfuse gateway — not from langfuse directly.
-from .tracer import _observe, _get_client
+# Import via tracer.py -- the sole langfuse gateway -- not from langfuse directly.
+from .tracer import _observe, _propagate_attributes
 
 
 def trace_agent(name: str, tags: list[str] | None = None, user_id: str | None = None):
@@ -34,25 +34,23 @@ def trace_agent(name: str, tags: list[str] | None = None, user_id: str | None = 
             @wraps(fn)
             @_observe(name=name)
             async def async_wrapper(*args, **kwargs):
-                _get_client().update_current_trace(
-                    name=name,
+                with _propagate_attributes(
                     tags=tags or [],
                     user_id=user_id,
                     metadata={"agent": name, "source": "platform"},
-                )
-                return await fn(*args, **kwargs)
+                ):
+                    return await fn(*args, **kwargs)
             return async_wrapper
         else:
             @wraps(fn)
             @_observe(name=name)
             def sync_wrapper(*args, **kwargs):
-                _get_client().update_current_trace(
-                    name=name,
+                with _propagate_attributes(
                     tags=tags or [],
                     user_id=user_id,
                     metadata={"agent": name, "source": "platform"},
-                )
-                return fn(*args, **kwargs)
+                ):
+                    return fn(*args, **kwargs)
             return sync_wrapper
     return decorator
 
