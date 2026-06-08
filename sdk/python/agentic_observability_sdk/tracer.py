@@ -9,7 +9,6 @@ import os
 from functools import lru_cache
 
 from langfuse import Langfuse, get_client, observe  # sole langfuse import point
-from langfuse.langchain import CallbackHandler as _LangFuseCallbackHandler
 
 
 def _init_otel_trace_provider() -> None:
@@ -125,7 +124,7 @@ def shutdown() -> None:
         pass
 
 
-def get_langchain_handler() -> "_LangFuseCallbackHandler":
+def get_langchain_handler():
     """Return a LangFuse callback handler bound to the current trace context.
 
     Pass this to any LangChain model invocation so the exact messages
@@ -146,15 +145,18 @@ def get_langchain_handler() -> "_LangFuseCallbackHandler":
         llm = ChatOpenAI(...).with_config({"callbacks": [handler]})
 
     Must be called AFTER get_tracer() — i.e. after LangFuse is initialised.
-    Returns a no-op compatible stub when called outside a traced context so
-    uninstrumented code paths don't raise.
+    Requires: pip install "agentic-observability-sdk[langchain]"
     """
     try:
+        from langfuse.langchain import CallbackHandler
         # v3: CallbackHandler auto-binds to the active span context — no
         # get_client().get_langchain_handler() method exists in v3.
-        return _LangFuseCallbackHandler()
-    except Exception:
-        return _LangFuseCallbackHandler()
+        return CallbackHandler()
+    except ImportError as exc:
+        raise ImportError(
+            "LangChain integration requires the langchain package.\n"
+            'Run: pip install "agentic-observability-sdk[langchain]"'
+        ) from exc
 
 
 def get_openai_client(**kwargs):
