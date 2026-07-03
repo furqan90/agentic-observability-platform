@@ -1,4 +1,4 @@
-#  Observability SDK — TypeScript / Node.js
+# Observability SDK — TypeScript / Node.js
 
 > **Status: Planned — not yet implemented.**
 
@@ -17,7 +17,7 @@ import {
   getAnthropicClient,    // via @arizeai/openinference-instrumentation-anthropic
   getPropagationHeaders,
   restorePropagationContext,
-} from '@platform/observability-sdk';
+} from '@agentic/observability-sdk';
 
 await getTracer();
 
@@ -43,4 +43,4 @@ const run = traceAgent({ name: 'my-agent', tags: ['demo'] })(
 ## Contributing
 
 Before implementing, read [../CONTRACT.md](../CONTRACT.md) and complete the checklist in §8.
-Package should be published as `@platform/observability-sdk` on npm (or a private registry).
+Package should be published as `@agentic/observability-sdk` on npm (or a private registry).

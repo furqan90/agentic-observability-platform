@@ -1,4 +1,4 @@
-# Connecting an Agent to the  Observability Platform
+# Connecting an Agent to the Agentic Observability Platform
 
 > **Time to first trace: ~10 minutes.**
 > This document is everything a developer needs to instrument a new agent project.
@@ -467,7 +467,7 @@ Or browse: `http://<platform-host>:9090/graph?g0.expr=traces_span_metrics_calls_
 
 ### Check Grafana
 
-1. Open **http://\<platform-host\>:3001** (admin / platform).
+1. Open **http://\<platform-host\>:3001** (admin / your `GRAFANA_ADMIN_PASSWORD`).
 2. Go to **Dashboards → Agents → agent-ops**.
 3. The **Invocation Rate** panel should show a spike after you run the agent.
 
@@ -498,7 +498,7 @@ from agentic_observability_sdk import trace_agent, trace_tool       # ✅ facade
 
 The `langfuse` package is imported in exactly **one** file in the entire
 platform: `agentic_observability_sdk/tracer.py`. That is the swap point.
-If  ever moves to a different tracing backend, we rewrite one file —
+If this platform ever moves to a different tracing backend, we rewrite one file —
 not every agent across every client environment. A direct `langfuse` import in
 agent code is a review-blocking violation.
 

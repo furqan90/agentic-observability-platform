@@ -1,4 +1,4 @@
-#  Agentic Observability — Enterprise Scale Planning
+# Agentic Observability — Enterprise Scale Planning
 
 > **Status:** Phase 1 complete (Docker Compose stack + basic SDK). This document
 > captures design decisions and execution phases for Phases 2–4.
@@ -66,8 +66,7 @@ This is a GDPR/data governance hard requirement.
 ### LangFuse Project Hierarchy
 
 ```
-Organization: 
-├── Project: eka-prod
+Organization: ├── Project: eka-prod
 ├── Project: eka-dev
 ├── Project: devenv-agent-prod      (separate eval metrics — see §DevEnv Agent)
 ├── Project: client-delivery-prod
@@ -314,4 +313,4 @@ is not a near-term concern at current agent count.
 
 ---
 
-* internal · Owner: Furqan · Classification: Internal*
+*internal · Owner: Furqan · Classification: Internal*

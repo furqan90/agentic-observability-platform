@@ -8,17 +8,17 @@
 
 ## Context
 
-**Organization:**  Inc. — technology consulting & outsourced software development
+**Organization:** Inc. — technology consulting & outsourced software development
 **Owner:** Furqan (Principal Software Developer)
 **Purpose:** Internal observability platform for all agentic AI workloads — local-first, cloud-ready (Azure)
-**Philosophy:** Agents run anywhere ( AKS, a Teams bot, a client VM); traces always phone home to this platform — and **client data never leaves a trace boundary we don't control**.
+**Philosophy:** Agents run anywhere (AKS, a Teams bot, a client VM); traces always phone home to this platform — and **client data never leaves a trace boundary we don't control**.
 
 ---
 
 ## Architecture Overview
 
 ```
-                          Observability Platform
+                         Observability Platform
 ┌───────────────────────────────────────────────────────────────────────┐
 │                                                                         │
 │   OTel Collector ──traces(OTLP)──► LangFuse-web ──► PostgreSQL (txn)    │
@@ -32,7 +32,7 @@
 └───────────────────────────────────────────────────────────────────────┘
             ▲                    ▲                     ▲
       Agent on AKS         Agent in Teams        Agent on client VM
-      ()          bot (client)          (egress over mTLS)
+      (platform)          bot (client)          (egress over mTLS)
             │                    │                     │
             └──── OpenTelemetry SDK (traces + metrics) ┘
 ```
@@ -58,7 +58,7 @@ The platform is deliberately structured so that **switching tracing/eval backend
 
 ### Two hard constraints (treat as architectural rules, not conventions)
 
-1. **Agents import the  `sdk/` facade — never `langfuse` directly.**
+1. **Agents import the `sdk/` facade — never `langfuse` directly.**
    All agent code uses `from sdk.python import trace_agent, trace_tool, record_usage`. The `langfuse` import lives in exactly one place: `sdk/python/tracer.py`. If we ever leave LangFuse, we rewrite **one package**, not N agents across M client environments. A `langfuse` import anywhere outside `sdk/` is a review-blocking violation.
 
 2. **All telemetry egresses through the OTel Collector — agents never point at a backend directly.**
@@ -174,8 +174,7 @@ ENCRYPTION_KEY=change-me-64-hex-chars   # openssl rand -hex 32  (REQUIRED in v3)
 # ── LangFuse headless bootstrap (creates org/project/keys on first boot) ──
 # Lets agents trace on Day 2 without manually clicking through the UI first.
 LANGFUSE_INIT_ORG_ID=platform
-LANGFUSE_INIT_ORG_NAME=
-LANGFUSE_INIT_PROJECT_ID=agents
+LANGFUSE_INIT_ORG_NAME=LANGFUSE_INIT_PROJECT_ID=agents
 LANGFUSE_INIT_PROJECT_NAME=Agent Platform
 LANGFUSE_INIT_PROJECT_PUBLIC_KEY=pk-lf-local
 LANGFUSE_INIT_PROJECT_SECRET_KEY=sk-lf-local
@@ -515,7 +514,7 @@ datasources:
 ```yaml
 apiVersion: 1
 providers:
-  - name: " Agent Ops"
+  - name: "Agent Ops"
     folder: "Agents"
     type: file
     options:
@@ -555,7 +554,7 @@ This dashboard is the **operational** view — its reason to exist is putting ag
 
 ```python
 """
- LangFuse v3 tracer — single import for all agents.
+LangFuse v3 tracer — single import for all agents.
 Reads LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST from env.
 """
 
@@ -671,7 +670,7 @@ Write-Host "ENCRYPTION_KEY=$(New-Secret 32)   # must be 64 hex chars"
 ### `scripts/setup.ps1` (Windows-first; `setup.sh` mirrors it for Linux/macOS)
 
 ```powershell
-Write-Host "===  Observability Platform — Local Setup ==="
+Write-Host "=== Observability Platform — Local Setup ==="
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Error "Docker not found. Install Docker Desktop."; exit 1
@@ -687,7 +686,7 @@ docker compose -f docker-compose/docker-compose.yml --env-file .env up -d
 Write-Host ""
 Write-Host "=== Services Starting (ClickHouse may take ~30s on first boot) ==="
 Write-Host "  LangFuse:    http://localhost:3000"
-Write-Host "  Grafana:     http://localhost:3001  (admin / platform)"
+Write-Host "  Grafana:     http://localhost:3001  (admin / admin)"
 Write-Host "  Prometheus:  http://localhost:9090"
 Write-Host "  OTLP intake: localhost:4317 (gRPC) / 4318 (HTTP)"
 Write-Host ""
@@ -714,7 +713,7 @@ Test-Svc "Collector"  "http://localhost:8889/metrics"
 
 ## Security & Multi-Tenant "Phone Home" Model
 
-The core premise — agents on *client* networks sending traces back to  — is a security and compliance surface, not an afterthought. Treat it as a first-class design area.
+The core premise — agents on *client* networks sending traces back to — is a security and compliance surface, not an afterthought. Treat it as a first-class design area.
 
 - **Ingress auth:** terminate TLS at Nginx/Ingress; require a **per-client bearer token or mTLS client cert** on the OTLP endpoint. One credential per client engagement so traffic can be revoked/attributed independently.
 - **Tenant isolation in LangFuse:** one **project per client** (use `environment` + tags). Prevents one client's traces from appearing in another's views.
@@ -813,4 +812,4 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318     # for metrics fan-out
 
 ---
 
-*Generated for  internal use. Owner: Furqan. Classification: Internal.*
+*Generated for internal use. Owner: Furqan. Classification: Internal.*

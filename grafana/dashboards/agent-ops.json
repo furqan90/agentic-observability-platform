@@ -50,7 +50,7 @@
   "time": { "from": "now-6h", "to": "now" },
   "timepicker": {},
   "timezone": "",
-  "title": " Agent Ops",
+  "title": "Agent Ops",
   "uid": "agent-ops",
   "version": 1,
   "panels": [

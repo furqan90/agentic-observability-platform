@@ -1,4 +1,4 @@
-#  Observability Platform — Prometheus scrape config
+# Observability Platform — Prometheus scrape config
 #
 # Prometheus scrapes the OTel Collector for agent RED metrics AND infra
 # exporters for the host/DB side. The combination is what enables agent↔infra

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-#  Observability Platform — one-command local setup (Linux / macOS)
+# Observability Platform — one-command local setup (Linux / macOS)
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "===  Observability Platform - Local Setup ==="
+echo "=== Observability Platform - Local Setup ==="
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker not found. Install Docker Engine / Desktop." >&2
@@ -22,7 +22,7 @@ cat <<'EOF'
 
 === Services starting (ClickHouse may take ~30s on first boot) ===
   LangFuse:    http://localhost:3000
-  Grafana:     http://localhost:3001  (admin / platform)
+  Grafana:     http://localhost:3001  (admin / admin)
   Prometheus:  http://localhost:9090
   OTLP intake: localhost:4317 (gRPC) / 4318 (HTTP)
 

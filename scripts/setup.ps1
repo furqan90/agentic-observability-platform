@@ -1,8 +1,8 @@
-#  Observability Platform — one-command local setup (Windows / PowerShell)
+# Observability Platform — one-command local setup (Windows / PowerShell)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 
-Write-Host "===  Observability Platform - Local Setup ==="
+Write-Host "=== Observability Platform - Local Setup ==="
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Error "Docker not found. Install Docker Desktop."; exit 1
@@ -24,7 +24,7 @@ docker compose -f (Join-Path $root "docker-compose/docker-compose.yml") --env-fi
 Write-Host ""
 Write-Host "=== Services starting (ClickHouse may take ~30s on first boot) ==="
 Write-Host "  LangFuse:    http://localhost:3000"
-Write-Host "  Grafana:     http://localhost:3001  (admin / platform)"
+Write-Host "  Grafana:     http://localhost:3001  (admin / admin)"
 Write-Host "  Prometheus:  http://localhost:9090"
 Write-Host "  OTLP intake: localhost:4317 (gRPC) / 4318 (HTTP)"
 Write-Host ""

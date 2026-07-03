@@ -1,4 +1,4 @@
-#  Observability SDK
+# Observability SDK
 
 Language-specific instrumentation facades for the Agentic Observability Platform.
 All SDKs implement the same [CONTRACT.md](CONTRACT.md) — metadata envelope, span naming,
@@ -10,7 +10,7 @@ routing work identically regardless of the language an agent is written in.
 | Language | Package | Install | Status |
 |---|---|---|---|
 | **Python** | `agentic-observability-sdk` | `pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python"` | ✅ Available |
-| **TypeScript / Node** | `@platform/observability-sdk` | — | 🔲 Planned |
+| **TypeScript / Node** | `@agentic/observability-sdk` | — | 🔲 Planned |
 
 ## Quick start (Python)
 
@@ -33,8 +33,7 @@ Full guide → [python/AGENT-ONBOARDING.md](python/AGENT-ONBOARDING.md)
 ## The one rule
 
 Agent code imports only from the SDK facade — never from `langfuse`, `openai`,
-`anthropic`, or OTel primitives directly. The SDK is the swap point. If 
-ever changes backends, one package is rewritten, not N agents across M client environments.
+`anthropic`, or OTel primitives directly. The SDK is the swap point. If ever changes backends, one package is rewritten, not N agents across M client environments.
 
 ## Adding a new language SDK
 

@@ -1,4 +1,4 @@
-#  Observability SDK — Cross-Language Contract
+# Observability SDK — Cross-Language Contract
 
 > Every language SDK in this repository must implement this contract.
 > It is the single source of truth for attribute names, span structure,
@@ -166,4 +166,4 @@ Before shipping a new language SDK, verify:
 
 ---
 
-* internal · Classification: Internal*
+*internal · Classification: Internal*

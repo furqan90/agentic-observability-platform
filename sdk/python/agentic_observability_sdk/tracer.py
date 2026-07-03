@@ -1,5 +1,5 @@
 """
- LangFuse tracer -- the ONLY module allowed to import ``langfuse``.
+LangFuse tracer -- the ONLY module allowed to import ``langfuse``.
 
 Reads LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST from env.
 If we ever leave LangFuse, we rewrite this one file -- not N agents.

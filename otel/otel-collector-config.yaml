@@ -1,4 +1,4 @@
-#  Observability Platform — OpenTelemetry Collector config
+# Observability Platform — OpenTelemetry Collector config
 #
 # The fan-out heart of the platform:
 #   • spans  → LangFuse v3 via its native OTLP endpoint (tracing / eval / cost)

@@ -1,4 +1,4 @@
-""" Observability SDK — agent instrumentation facade.
+"""Observability SDK — agent instrumentation facade.
 
 Install:
     pip install agentic-observability-sdk

@@ -1,6 +1,6 @@
 apiVersion: 1
 providers:
-  - name: " Agent Ops"
+  - name: "Agent Ops"
     folder: "Agents"
     type: file
     disableDeletion: false

@@ -65,7 +65,7 @@ def lf_auth():
 
 # -- step 1 -- initialise SDK --------------------------------------------------
 
-print("\n===  Observability Platform - end-to-end trace test ===\n")
+print("\n=== Observability Platform - end-to-end trace test ===\n")
 print(f"  LANGFUSE_HOST              : {LANGFUSE_HOST}")
 print(f"  OTEL_EXPORTER_OTLP_ENDPOINT: {os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT', '(not set -- direct path)')}")
 print(f"  DEPLOY_ENV              : {os.environ.get('DEPLOY_ENV', 'local')}")
@@ -92,7 +92,7 @@ def run_test_agent(user_input: str) -> str:
     record_usage(AGENT_NAME, "gpt-4o-mock", input_tokens=42, output_tokens=18, cost_usd=0.0001)
     return answer
 
-result = run_test_agent("What is the  observability platform?")
+result = run_test_agent("What is the observability platform?")
 print(f"      Agent returned: {result!r}")
 
 # Flush before polling -- BatchSpanProcessor has a delay

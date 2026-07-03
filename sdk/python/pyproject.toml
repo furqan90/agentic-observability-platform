@@ -1,7 +1,7 @@
 [project]
 name = "agentic-observability-sdk"
 version = "0.2.0"
-description = " agent instrumentation facade (LangFuse v4 + OpenTelemetry). Agents import this, never langfuse directly."
+description = "agent instrumentation facade (LangFuse v4 + OpenTelemetry). Agents import this, never langfuse directly."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Furqan", email = "furqan@example.com" }]

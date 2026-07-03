@@ -35,7 +35,7 @@ def init_metrics() -> None:
         from opentelemetry.sdk.resources import Resource
 
         resource = Resource.create({
-            "service.name": os.environ.get("OTEL_SERVICE_NAME", "platform-agent"),
+            "service.name": os.environ.get("OTEL_SERVICE_NAME", "agent"),
             "deployment.environment": os.environ.get("DEPLOY_ENV", "local"),
         })
         reader = PeriodicExportingMetricReader(OTLPMetricExporter())

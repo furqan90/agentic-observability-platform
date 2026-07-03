@@ -1,7 +1,7 @@
 # Agentic Observability Platform
 
-Internal observability for **all**  agentic AI workloads. Agents run
-anywhere —  AKS, a Teams bot, a client VM — and **phone home** with
+Internal observability for **all** agentic AI workloads. Agents run
+anywhere — AKS, a Teams bot, a client VM — and **phone home** with
 OpenTelemetry. Local-first, Azure-ready.
 
 > Full design rationale lives in [`observability-plan.md`](observability-plan.md).
@@ -40,7 +40,7 @@ Agents ──OTel──► Nginx/Ingress ──► OTel Collector ─┬─ trac
 | Service     | URL                     | Notes                          |
 |-------------|-------------------------|--------------------------------|
 | LangFuse    | http://localhost:3000   | trace / eval / cost            |
-| Grafana     | http://localhost:3001   | admin / `platform`            |
+| Grafana     | http://localhost:3001   | admin / `$GRAFANA_ADMIN_PASSWORD`            |
 | Prometheus  | http://localhost:9090   | metrics store                  |
 | OTLP intake | localhost:4317 / 4318   | where agents send telemetry    |
 

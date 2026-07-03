@@ -1,4 +1,4 @@
-#  Observability Platform — Command Reference
+# Observability Platform — Command Reference
 
 All commands run from the **repo root** (`C:\Work\Projects\agentic_observability_platform`).
 
@@ -117,7 +117,7 @@ docker compose -f docker-compose/docker-compose.yml --env-file .env up -d
 | Service            | URL                              | Notes                              |
 |--------------------|----------------------------------|------------------------------------|
 | LangFuse UI        | http://localhost:3000            | Default login: furqan@example.com / local |
-| Grafana            | http://localhost:3001            | admin / platform                  |
+| Grafana            | http://localhost:3001            | admin / $GRAFANA_ADMIN_PASSWORD                  |
 | Prometheus         | http://localhost:9090            | Metrics store + targets view       |
 | OTLP gRPC          | localhost:4317                   | Agents send spans here             |
 | OTLP HTTP          | localhost:4318                   | Agents send spans here (HTTP)      |

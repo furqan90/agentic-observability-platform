@@ -1,4 +1,4 @@
-#  Observability Platform — Stage 1 (local dev, full LangFuse v3 stack)
+# Observability Platform — Stage 1 (local dev, full LangFuse v3 stack)
 # Start with:  scripts/setup.ps1   (or)   docker compose -f docker-compose/docker-compose.yml --env-file .env up -d
 #
 # Internal service ports (Postgres/ClickHouse/Redis/MinIO) are NOT published here.

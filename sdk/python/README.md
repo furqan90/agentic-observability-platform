@@ -1,6 +1,6 @@
-#  Observability SDK
+# Observability SDK
 
-Instrumentation facade for all  agent projects.
+Instrumentation facade for all agent projects.
 **Agents import this — never `langfuse` directly.**
 
 > **New to this?** Start with **[AGENT-ONBOARDING.md](AGENT-ONBOARDING.md)** —
