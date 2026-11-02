@@ -1,12 +1,12 @@
 [project]
 name = "agentic-observability-sdk"
-version = "0.2.0"
+version = "0.3.0"
 description = "agent instrumentation facade (LangFuse v4 + OpenTelemetry). Agents import this, never langfuse directly."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Furqan", email = "furqan@example.com" }]
 dependencies = [
-    "langfuse>=4.0.0,<5.0.0",
+    "langfuse>=4.2.0,<5.0.0",   # 4.2.0 added Langfuse(span_exporter=), which get_tracer() needs
     "opentelemetry-sdk>=1.25.0",
     "opentelemetry-exporter-otlp>=1.25.0",
 ]

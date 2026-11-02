@@ -1,7 +1,8 @@
 # Handover: multi-project Langfuse tracing
 
 Branch: `claude/multi-langfuse-projects-aubda9` (pushed, no PR yet)
-Status: **implemented, unit-tested, NOT yet validated against a running stack.**
+Status: **routing and ingress validated (see §3.0). Real second project, Grafana and
+org API checks still open. The live Collector has not been switched to this config.**
 Design and runbook: [`docs/MULTI-PROJECT.md`](MULTI-PROJECT.md). This file covers
 what's done, what isn't, and what to do next.
 
@@ -42,10 +43,53 @@ python scripts/gen-collector-config.py --check # OK
 
 ---
 
-## 3. Not yet validated: do these next, in order
+## 3. Validation
 
-The cloud session had no Docker, couldn't download `otelcol-contrib`, and
-couldn't reach langfuse.com. Everything below is untested.
+### 3.0 Results so far (2026-11-02, Collector v0.153.0, Langfuse 3.178.0)
+
+The stack on the dev machine is shared: `pilot-*`, `hrp-*` and `litellm` all send to
+the live Collector. So these checks used temporary containers on other ports, and the
+live Collector was not restarted. **Its config is bind-mounted from this checkout, so
+any restart of it loads whatever config is checked out.**
+
+| Handover step | Result |
+|---|---|
+| 3.1 `validate` | Pass. No template changes needed; all four syntax assumptions hold on 0.153.0 |
+| 3.2 Default path | Pass with real Langfuse, through a temporary Collector |
+| 3.3 Second project | Routing logic passes against a sink (`eka`, `team-a`, unknown → default). **Real Langfuse steps not run: needs a project and keys** |
+| 3.3 step 7 cost metric | Name is `agent_cost_usd_total`, no unit added. Grafana view not checked |
+| 3.4 Org API | **Not run: needs an org key from the UI** |
+| 3.5 nginx binding | Pass against a sink, 16/16 cases overall including gRPC |
+
+`OTLPSpanExporter` does pick up `OTEL_EXPORTER_OTLP_HEADERS` and
+`OTEL_EXPORTER_OTLP_CERTIFICATE` when constructed with an explicit endpoint, and the
+metric exporter uses them too. With a token bound to `eka` and `LANGFUSE_PROJECT=agents`,
+the trace goes to `eka` but the cost metric stays labelled `agents` (the limitation in §4).
+
+Client side: the SDK is now **0.3.0** with `langfuse>=4.2.0`, tested at that floor on
+Python 3.11. `AGENT-ONBOARDING.md` covers moving an existing agent and the ingress
+variables. Running apps (`pilot-agent`, `pilot-agent-stable`, `hrp-api`) still have the
+old build, and no real app image has been rebuilt with 0.3.0 yet.
+
+Found along the way (none caused by this branch, none fixed yet):
+
+- **`agent_name` is always empty on span metrics.** The SDK sets `agent.name` only on
+  `record_usage` metrics, never on spans: all 58 live series have no `agent_name`. RED
+  panels can't split by agent and the Agent dropdown has no values.
+- **The SDK sometimes loses a trace on the host → published-port path.** Short-lived
+  processes on Windows failed with "Failed to export spans batch" after about 11s. Rate:
+  3/40 on this config, 4/40 on the pre-branch config, 0/600 for raw requests inside the
+  Docker network. Cause not identified. Long-running agents not measured. A lost export
+  makes `send_test_trace.py` report a false FAIL, so rerun before debugging routing.
+- **`send_test_trace.py`'s "Metrics in Prom" check is weak.** It passes on any existing
+  series, not this run's. It passed here even though this run's metrics went to a
+  Collector that Prometheus doesn't scrape.
+- **`:latest` is only proven at 0.153.0**, the image cached locally. Pin it before a
+  fresh pull can change the version.
+
+### Remaining steps
+
+The 3.1, 3.2 and 3.5 commands below remain as the recipe for rerunning.
 
 ### 3.1 Collector accepts the generated config
 ```bash

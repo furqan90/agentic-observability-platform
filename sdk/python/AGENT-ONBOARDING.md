@@ -80,6 +80,10 @@ pip install --force-reinstall \
   "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python"
 ```
 
+If the SDK is installed in a Docker image, rebuild the image. An unpinned Git URL
+doesn't change between builds, so Docker can reuse the old layer. Use
+`docker build --no-cache`, or pin the URL to a commit (`...platform.git@<commit>#subdirectory=sdk/python`).
+
 ---
 
 ## Step 2 — Verify the install
@@ -87,6 +91,9 @@ pip install --force-reinstall \
 ```bash
 python -c "from agentic_observability_sdk import get_tracer, trace_agent, trace_tool, record_usage, shutdown; print('OK')"
 # Expected: OK
+
+python -c "from importlib.metadata import version; from agentic_observability_sdk import get_project; print(version('agentic-observability-sdk'))"
+# Expected: 0.3.0 or later. An ImportError means the SDK is too old for LANGFUSE_PROJECT.
 ```
 
 The package pulls in its own dependencies (`langfuse`, `opentelemetry-sdk`,
@@ -96,9 +103,9 @@ The package pulls in its own dependencies (`langfuse`, `opentelemetry-sdk`,
 
 ## Step 3 — Set environment variables on the agent host
 
-These six variables are the entire configuration. Set them in your `.env`,
+These variables are the entire configuration. Set them in your `.env`,
 Docker Compose environment block, K8s Secret, or shell — wherever your agent
-picks up its environment.
+picks up its environment. `LANGFUSE_PROJECT` is optional and the rest are required.
 
 ```env
 # ── Auth (who you are) ─────────────────────────────────────────────────────
@@ -109,6 +116,7 @@ LANGFUSE_SECRET_KEY=sk-lf-local
 # ── Project (where your traces land) ───────────────────────────────────────
 # Slug of your team's Langfuse project, as listed in the platform's
 # otel/projects.yaml. Unset or unknown → the platform's default project.
+# Needs SDK 0.3.0 or later: older versions ignore it without any warning.
 LANGFUSE_PROJECT=agents
 
 # ── Platform location ──────────────────────────────────────────────────────
@@ -142,6 +150,51 @@ New project for your team? Ask the platform owners. The runbook is in
 
 One process traces into **one** project. If you need more, read the
 "Multiple projects in one process" section of that doc first.
+
+### Moving an existing agent to its own project
+
+No code changes are needed. If you do nothing, your agent keeps working and its
+traces stay in the default project.
+
+To move it:
+
+1. **Get a slug and API keys.** Ask the platform owners to register your project
+   in `otel/projects.yaml` and give you that project's API keys. Wait until the
+   slug is live, because an unregistered slug goes to the default project.
+2. **Upgrade the SDK to 0.3.0 or later** and rebuild your image (see "Upgrading an
+   existing install" in Step 1). This also upgrades `langfuse` to 4.2.0 or later if needed.
+3. **Check the version** with the second command in Step 2. An SDK older than 0.3.0
+   ignores `LANGFUSE_PROJECT` without any warning, and your traces stay in the default
+   project.
+4. **Change the config:** set `LANGFUSE_PROJECT=<slug>`, and switch
+   `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY` to the new project's keys.
+5. **Restart the agent** and confirm that new traces appear in the new project.
+
+Worth knowing:
+
+- Existing traces stay in the old project. They are not moved.
+- A session running across the switch is split between the two projects.
+- After upgrading, token and cost metrics carry a `tl_project` label (`unset` if you
+  set no project). This starts new Prometheus series, so graphs per series show a break
+  at that point. Totals that `sum()` across series are not affected.
+
+### Sending through the platform ingress (client VMs)
+
+If your agent reaches the platform through the token-protected ingress, add these
+to the variables above:
+
+```env
+OTEL_EXPORTER_OTLP_ENDPOINT=https://<ingress-host>:4318
+# Your client token. Write the space as %20.
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20<client-token>
+# Only if the ingress certificate comes from a private CA.
+OTEL_EXPORTER_OTLP_CERTIFICATE=/path/to/ca.crt
+```
+
+The platform can bind your token to a project. If it does, your traces go to that
+project whatever `LANGFUSE_PROJECT` says. Still set `LANGFUSE_PROJECT` to the same
+slug, because the `tl_project` label on your token and cost metrics comes from it.
+A request with a missing or wrong token gets a `401` and the trace is lost.
 
 ### What to use for `<platform-host>`
 

@@ -89,7 +89,9 @@ fine at team-level project counts.
 6. **Tell the team** to set `LANGFUSE_PROJECT=eka` and use the `eka` project's
    API keys for `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY`. Those keys are for REST calls
    (scores, datasets). If they belong to a different project, scores and traces
-   split across projects.
+   split across projects. They need SDK 0.3.0 or later: older versions ignore
+   `LANGFUSE_PROJECT` without any warning. Client steps are in
+   [`AGENT-ONBOARDING.md`](../sdk/python/AGENT-ONBOARDING.md).
 7. **Verify** routing and isolation:
    ```bash
    LANGFUSE_PROJECT=eka LANGFUSE_PUBLIC_KEY=pk-lf-<eka> LANGFUSE_SECRET_KEY=sk-lf-<eka> \
@@ -284,7 +286,10 @@ Langfuse `projectId` as an optional `langfuse_project_id:` field in
 |---|---|
 | Generator unit tests (`pytest scripts/tests`): every project gets exporter/route/pipeline, default route, every referenced component defined, registry validation | ✅ pass |
 | SDK tests (`pytest sdk/python/tests`): `tl.project` on every span's resource, no-project path unchanged, release mirrored, warnings | ✅ pass |
-| `otelcol-contrib validate` against the generated config | ⏳ not yet run. Needs a Collector binary or Docker |
-| End-to-end two-project trace (`send_test_trace.py` isolation check) | ⏳ needs the running stack with a second project |
-| Org API availability on our edition (§5.2) | ⏳ needs the running instance |
-| nginx token → project binding end to end (§3) | ⏳ needs nginx in front of the stack with a bound token |
+| `otelcol-contrib validate` against the generated config | ✅ pass on v0.153.0, including a hyphenated slug and an unset per-project env var. A deliberately broken config fails, so the check is real. Newer `:latest` images not tested |
+| Default path, real Langfuse (`send_test_trace.py`, no `LANGFUSE_PROJECT`) | ✅ pass through a temporary Collector running this config |
+| Routing logic: registered, unknown, missing and hyphenated slugs; one request with two projects; OTLP HTTP and gRPC | ✅ pass against a stand-in OTLP sink (route and credentials checked per case) |
+| nginx token → project binding (§3) | ✅ pass with the real `nginx.conf` (only token maps changed) against the sink: bound token wins over agent slug and spoofed header, spoofed header dropped for unbound token, bad token gets 401 |
+| End-to-end two-project trace in real Langfuse (`send_test_trace.py` isolation check) | ⏳ needs a second project and its API keys |
+| Grafana panels and Project variable with `tl_project` data | ⏳ needs the live Collector on this config |
+| Org API availability on our edition (§5.2) | ⏳ needs an org key from the UI. A project key gets 403, which says nothing about the edition. `.env` sets no `LANGFUSE_EE_LICENSE_KEY` or `ADMIN_API_KEY` |
