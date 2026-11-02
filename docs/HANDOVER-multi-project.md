@@ -1,8 +1,9 @@
 # Handover: multi-project Langfuse tracing
 
 Branch: `claude/multi-langfuse-projects-aubda9` (pushed, no PR yet)
-Status: **routing and ingress validated (see §3.0). Real second project, Grafana and
-org API checks still open. The live Collector has not been switched to this config.**
+Status: **routing and ingress validated (see §3.0). The live Collector runs this config,
+with `agentic-coding-platform` registered. Real-agent default route, Grafana view and org
+API checks still open.**
 Design and runbook: [`docs/MULTI-PROJECT.md`](MULTI-PROJECT.md). This file covers
 what's done, what isn't, and what to do next.
 
@@ -48,15 +49,16 @@ python scripts/gen-collector-config.py --check # OK
 ### 3.0 Results so far (2026-11-02, Collector v0.153.0, Langfuse 3.178.0)
 
 The stack on the dev machine is shared: `pilot-*`, `hrp-*` and `litellm` all send to
-the live Collector. So these checks used temporary containers on other ports, and the
-live Collector was not restarted. **Its config is bind-mounted from this checkout, so
-any restart of it loads whatever config is checked out.**
+the live Collector. So most checks used temporary containers on other ports. The owner
+then restarted the live Collector on this config at 09:20 UTC. **Its config is bind-mounted
+from this checkout, so any restart of it loads whatever config is checked out.** Switching
+to `main` before this merges would drop the `agentic-coding-platform` route on next restart.
 
 | Handover step | Result |
 |---|---|
 | 3.1 `validate` | Pass. No template changes needed; all four syntax assumptions hold on 0.153.0 |
 | 3.2 Default path | Pass with real Langfuse, through a temporary Collector |
-| 3.3 Second project | Routing logic passes against a sink (`eka`, `team-a`, unknown → default). **Real Langfuse steps not run: needs a project and keys** |
+| 3.3 Second project | Pass with real Langfuse through the live Collector, project `agentic-coding-platform` (trace arrived, not in default). Unknown slug → default passes on a temporary Collector. **Default route not yet exercised by a real agent on the live Collector** |
 | 3.3 step 7 cost metric | Name is `agent_cost_usd_total`, no unit added. Grafana view not checked |
 | 3.4 Org API | **Not run: needs an org key from the UI** |
 | 3.5 nginx binding | Pass against a sink, 16/16 cases overall including gRPC |

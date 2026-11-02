@@ -290,6 +290,7 @@ Langfuse `projectId` as an optional `langfuse_project_id:` field in
 | Default path, real Langfuse (`send_test_trace.py`, no `LANGFUSE_PROJECT`) | ✅ pass through a temporary Collector running this config |
 | Routing logic: registered, unknown, missing and hyphenated slugs; one request with two projects; OTLP HTTP and gRPC | ✅ pass against a stand-in OTLP sink (route and credentials checked per case) |
 | nginx token → project binding (§3) | ✅ pass with the real `nginx.conf` (only token maps changed) against the sink: bound token wins over agent slug and spoofed header, spoofed header dropped for unbound token, bad token gets 401 |
-| End-to-end two-project trace in real Langfuse (`send_test_trace.py` isolation check) | ⏳ needs a second project and its API keys |
-| Grafana panels and Project variable with `tl_project` data | ⏳ needs the live Collector on this config |
+| End-to-end two-project trace in real Langfuse (`send_test_trace.py` isolation check) | ✅ pass through the live Collector with project `agentic-coding-platform`. A lost export can make a run fail, so retry before debugging routing (2 of 3 runs were lost here) |
+| Default route with a real agent on the live Collector | ⏳ needs one `pilot-agent` request. An unknown slug reached the default project on a temporary Collector with the same config |
+| Grafana panels and Project variable with `tl_project` data | ⏳ panel queries return data in Prometheus, dashboard not yet viewed |
 | Org API availability on our edition (§5.2) | ⏳ needs an org key from the UI. A project key gets 403, which says nothing about the edition. `.env` sets no `LANGFUSE_EE_LICENSE_KEY` or `ADMIN_API_KEY` |

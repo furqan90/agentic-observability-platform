@@ -52,6 +52,9 @@ connectors:
       - context: resource
         condition: attributes["tl.project"] == "agents"
         pipelines: [traces/langfuse-agents]
+      - context: resource
+        condition: attributes["tl.project"] == "agentic-coding-platform"
+        pipelines: [traces/langfuse-agentic-coding-platform]
 
 processors:
   batch: {}
@@ -82,6 +85,11 @@ exporters:
     endpoint: http://langfuse-web:3000/api/public/otel
     headers:
       Authorization: "Basic ${env:LANGFUSE_OTEL_AUTH}"
+  # project: agentic-coding-platform
+  otlp_http/langfuse-agentic-coding-platform:
+    endpoint: http://langfuse-web:3000/api/public/otel
+    headers:
+      Authorization: "Basic ${env:LANGFUSE_OTEL_AUTH_AGENTIC_CODING_PLATFORM}"
 
   # Metrics → Prometheus scrape endpoint on :8889
   prometheus:
@@ -98,6 +106,9 @@ service:
     traces/langfuse-agents:
       receivers: [routing/langfuse_projects]
       exporters: [otlp_http/langfuse-agents]
+    traces/langfuse-agentic-coding-platform:
+      receivers: [routing/langfuse_projects]
+      exporters: [otlp_http/langfuse-agentic-coding-platform]
     metrics:
       # otlp: accepts push metrics from SDK (token/cost counters via OTLP /v1/metrics)
       # span_metrics: receives RED metrics generated from the traces pipeline above

@@ -32,6 +32,9 @@ projects:
     auth_env: LANGFUSE_OTEL_AUTH
     description: Default project (bootstrap). Catch-all for unknown/missing tl.project.
 
+  agentic-coding-platform:
+    description: OpenCode + LiteLLM proxy (agentic-coding-platform repo)
+
   # Example — uncomment, create the project in the Langfuse UI, put its keys in
   # otel/langfuse-projects.env as LANGFUSE_OTEL_AUTH_EKA, then regenerate.
   # eka:

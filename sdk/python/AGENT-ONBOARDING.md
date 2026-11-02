@@ -178,6 +178,21 @@ Worth knowing:
   set no project). This starts new Prometheus series, so graphs per series show a break
   at that point. Totals that `sum()` across series are not affected.
 
+### Apps that don't use this SDK (LiteLLM and other OpenTelemetry apps)
+
+`LANGFUSE_PROJECT` is read only by this SDK. Any other app that exports OpenTelemetry
+traces to the Collector selects its project with a resource attribute:
+
+```env
+OTEL_RESOURCE_ATTRIBUTES=tl.project=<slug>
+OTEL_EXPORTER_OTLP_ENDPOINT=http://<platform-host>:4318
+```
+
+Both OTLP HTTP (`:4318`) and gRPC (`:4317`) work. The slug must be registered in
+`otel/projects.yaml`, or traces go to the default project. These apps don't emit the
+SDK's `agent_tokens_total` and `agent_cost_usd_total` metrics unless they add them
+themselves, so the Grafana cost panel won't include them.
+
 ### Sending through the platform ingress (client VMs)
 
 If your agent reaches the platform through the token-protected ingress, add these
