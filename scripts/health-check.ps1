@@ -10,7 +10,9 @@ function Test-Svc($name, $url) {
 }
 
 Write-Host "=== Health check ==="
-Test-Svc "LangFuse"   "http://localhost:3000/api/public/health"
-Test-Svc "Grafana"    "http://localhost:3001/api/health"
-Test-Svc "Prometheus" "http://localhost:9090/-/healthy"
-Test-Svc "Collector"  "http://localhost:8889/metrics"
+Test-Svc "LangFuse"     "http://localhost:3000/api/public/health"
+Test-Svc "Grafana"      "http://localhost:3001/api/health"
+Test-Svc "Prometheus"   "http://localhost:9090/-/healthy"
+Test-Svc "Collector"    "http://localhost:8889/metrics"
+Test-Svc "Alertmanager" "http://localhost:9093/-/healthy"
+Test-Svc "Alert logger" "http://localhost:9095/healthz"

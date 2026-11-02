@@ -20,7 +20,11 @@ connectors:
   span_metrics:
     histogram:
       explicit:
-        buckets: [50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s, 30s]
+        # 3s bucket boundary is required by the 95%-under-3000ms latency SLO
+        # in prometheus/rules/slo-alerts.yml (duration_milliseconds_bucket{le="3000"}).
+        # Prometheus histograms only have data at exact configured "le" boundaries,
+        # so without this the latency SLI/burn-rate queries return no data, period.
+        buckets: [50ms, 100ms, 250ms, 500ms, 1s, 2s, 3s, 5s, 10s, 30s]
     dimensions:
       - name: agent.name
       - name: gen_ai.request.model

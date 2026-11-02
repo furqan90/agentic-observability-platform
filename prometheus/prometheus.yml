@@ -8,6 +8,16 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# SLI recording rules + SLO burn-rate alerts (see prometheus/rules/slo-alerts.yml)
+rule_files:
+  - "rules/*.yml"
+
+# Where fired alerts are sent for routing/grouping/notification.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 scrape_configs:
   # Agent RED metrics (rate/errors/duration) from the spanmetrics connector
   - job_name: "otel-collector"

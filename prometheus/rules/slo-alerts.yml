@@ -1,0 +1,169 @@
+# Agentic Observability Platform — SLIs, SLOs, and burn-rate alerts
+#
+# Two SLOs are defined per agent, sourced from the same spanmetrics series
+# already used by the Agent Ops dashboard (traces_span_metrics_calls_total,
+# traces_span_metrics_duration_milliseconds_bucket -- this Collector version,
+# 0.153.0+, prefixes spanmetrics output with "traces_span_metrics_"; see the
+# naming note in otel/otel-collector-config.yaml):
+#
+#   1. Availability SLO — 99.5% of calls succeed (error budget: 0.5%)
+#   2. Latency SLO       — 95% of calls complete under 3000ms (error budget: 5%)
+#
+# Alerting follows the Google SRE Workbook "multi-window, multi-burn-rate"
+# pattern: an alert only fires when BOTH a short and a long window agree the
+# error budget is burning too fast. This avoids paging on single blips while
+# still catching sustained breaches quickly.
+#
+#   Fast burn  (5m  + 1h)  factor 14.4x  -> for: 2m  -> severity: page
+#   Slow burn  (30m + 6h)  factor  6x    -> for: 15m -> severity: ticket
+#
+# See: https://sre.google/workbook/alerting-on-slos/
+
+groups:
+  # ─────────────────────────────────────────────────────────────
+  # SLI recording rules — pre-computed ratios, reused by dashboard + alerts
+  # ─────────────────────────────────────────────────────────────
+  - name: agentic-sli-recording-rules
+    rules:
+      # Availability SLI: fraction of non-error calls, per agent, per window
+      - record: slo:agentic_availability:ratio_rate5m
+        expr: sum(rate(traces_span_metrics_calls_total{status_code!="STATUS_CODE_ERROR"}[5m])) by (agent_name) / sum(rate(traces_span_metrics_calls_total[5m])) by (agent_name)
+      - record: slo:agentic_availability:ratio_rate30m
+        expr: sum(rate(traces_span_metrics_calls_total{status_code!="STATUS_CODE_ERROR"}[30m])) by (agent_name) / sum(rate(traces_span_metrics_calls_total[30m])) by (agent_name)
+      - record: slo:agentic_availability:ratio_rate1h
+        expr: sum(rate(traces_span_metrics_calls_total{status_code!="STATUS_CODE_ERROR"}[1h])) by (agent_name) / sum(rate(traces_span_metrics_calls_total[1h])) by (agent_name)
+      - record: slo:agentic_availability:ratio_rate6h
+        expr: sum(rate(traces_span_metrics_calls_total{status_code!="STATUS_CODE_ERROR"}[6h])) by (agent_name) / sum(rate(traces_span_metrics_calls_total[6h])) by (agent_name)
+
+      # Latency SLI: fraction of calls under the 3000ms objective, per agent, per window
+      - record: slo:agentic_latency:ratio_rate5m
+        expr: sum(rate(traces_span_metrics_duration_milliseconds_bucket{le="3000"}[5m])) by (agent_name) / sum(rate(traces_span_metrics_duration_milliseconds_count[5m])) by (agent_name)
+      - record: slo:agentic_latency:ratio_rate30m
+        expr: sum(rate(traces_span_metrics_duration_milliseconds_bucket{le="3000"}[30m])) by (agent_name) / sum(rate(traces_span_metrics_duration_milliseconds_count[30m])) by (agent_name)
+      - record: slo:agentic_latency:ratio_rate1h
+        expr: sum(rate(traces_span_metrics_duration_milliseconds_bucket{le="3000"}[1h])) by (agent_name) / sum(rate(traces_span_metrics_duration_milliseconds_count[1h])) by (agent_name)
+      - record: slo:agentic_latency:ratio_rate6h
+        expr: sum(rate(traces_span_metrics_duration_milliseconds_bucket{le="3000"}[6h])) by (agent_name) / sum(rate(traces_span_metrics_duration_milliseconds_count[6h])) by (agent_name)
+
+  # ─────────────────────────────────────────────────────────────
+  # Burn-rate recording rules — (1 - SLI) / (1 - SLO target)
+  # Burn rate of 1.0 == "consuming the 30d error budget exactly on schedule"
+  # ─────────────────────────────────────────────────────────────
+  - name: agentic-burn-rate-recording-rules
+    rules:
+      - record: slo:agentic_availability:burn_rate5m
+        expr: (1 - slo:agentic_availability:ratio_rate5m) / (1 - 0.995)
+      - record: slo:agentic_availability:burn_rate30m
+        expr: (1 - slo:agentic_availability:ratio_rate30m) / (1 - 0.995)
+      - record: slo:agentic_availability:burn_rate1h
+        expr: (1 - slo:agentic_availability:ratio_rate1h) / (1 - 0.995)
+      - record: slo:agentic_availability:burn_rate6h
+        expr: (1 - slo:agentic_availability:ratio_rate6h) / (1 - 0.995)
+
+      - record: slo:agentic_latency:burn_rate5m
+        expr: (1 - slo:agentic_latency:ratio_rate5m) / (1 - 0.95)
+      - record: slo:agentic_latency:burn_rate30m
+        expr: (1 - slo:agentic_latency:ratio_rate30m) / (1 - 0.95)
+      - record: slo:agentic_latency:burn_rate1h
+        expr: (1 - slo:agentic_latency:ratio_rate1h) / (1 - 0.95)
+      - record: slo:agentic_latency:burn_rate6h
+        expr: (1 - slo:agentic_latency:ratio_rate6h) / (1 - 0.95)
+
+  # ─────────────────────────────────────────────────────────────
+  # SLO burn-rate alerts (multi-window, multi-burn-rate)
+  # ─────────────────────────────────────────────────────────────
+  - name: agentic-slo-alerts
+    rules:
+      - alert: AgenticAvailabilitySLOFastBurn
+        expr: slo:agentic_availability:burn_rate5m > 14.4 and slo:agentic_availability:burn_rate1h > 14.4
+        for: 2m
+        labels:
+          severity: page
+          slo: availability
+          burn: fast
+        annotations:
+          summary: "Availability SLO fast-burn on {{ $labels.agent_name }}"
+          description: >-
+            {{ $labels.agent_name }} is burning its 99.5% availability error budget
+            at {{ $value | printf "%.1f" }}x — at this rate the 30d budget is
+            exhausted in under a day. 5m and 1h windows both confirm.
+          runbook: "Check Grafana 'Agent Ops' Error Rate panel, then agent logs / recent deploys."
+
+      - alert: AgenticAvailabilitySLOSlowBurn
+        expr: slo:agentic_availability:burn_rate30m > 6 and slo:agentic_availability:burn_rate6h > 6
+        for: 15m
+        labels:
+          severity: ticket
+          slo: availability
+          burn: slow
+        annotations:
+          summary: "Availability SLO slow-burn on {{ $labels.agent_name }}"
+          description: >-
+            {{ $labels.agent_name }} is burning its 99.5% availability error budget
+            at {{ $value | printf "%.1f" }}x over 30m/6h — sustained but less urgent
+            than a fast burn.
+          runbook: "Check Grafana 'Agent Ops' Error Rate panel; investigate before budget exhausts."
+
+      - alert: AgenticLatencySLOFastBurn
+        expr: slo:agentic_latency:burn_rate5m > 14.4 and slo:agentic_latency:burn_rate1h > 14.4
+        for: 2m
+        labels:
+          severity: page
+          slo: latency
+          burn: fast
+        annotations:
+          summary: "Latency SLO fast-burn on {{ $labels.agent_name }}"
+          description: >-
+            {{ $labels.agent_name }} is burning its 95%-under-3000ms latency error
+            budget at {{ $value | printf "%.1f" }}x. 5m and 1h windows both confirm.
+          runbook: "Check Grafana 'Agent Ops' P95 Latency panel next to Host CPU/Memory for 'model or box?'."
+
+      - alert: AgenticLatencySLOSlowBurn
+        expr: slo:agentic_latency:burn_rate30m > 6 and slo:agentic_latency:burn_rate6h > 6
+        for: 15m
+        labels:
+          severity: ticket
+          slo: latency
+          burn: slow
+        annotations:
+          summary: "Latency SLO slow-burn on {{ $labels.agent_name }}"
+          description: >-
+            {{ $labels.agent_name }} is burning its 95%-under-3000ms latency error
+            budget at {{ $value | printf "%.1f" }}x over 30m/6h.
+          runbook: "Check Grafana 'Agent Ops' P95 Latency panel; investigate before budget exhausts."
+
+  # ─────────────────────────────────────────────────────────────
+  # Fast, single-window alerts — not SLO burn rate, just simple thresholds.
+  # Useful for demos (fire almost immediately) and as a blunt safety net.
+  # ─────────────────────────────────────────────────────────────
+  - name: agentic-fast-threshold-alerts
+    rules:
+      - alert: AgenticHighErrorRate
+        expr: sum(rate(traces_span_metrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m])) by (agent_name) / sum(rate(traces_span_metrics_calls_total[5m])) by (agent_name) > 0.05
+        for: 1m
+        labels:
+          severity: warning
+          slo: availability
+        annotations:
+          summary: "{{ $labels.agent_name }} error rate above 5% (5m)"
+          description: "{{ $labels.agent_name }} error rate is {{ $value | humanizePercentage }} over the last 5m (threshold 5%)."
+
+      - alert: AgenticHighP95Latency
+        expr: histogram_quantile(0.95, sum(rate(traces_span_metrics_duration_milliseconds_bucket[5m])) by (le, agent_name)) > 3000
+        for: 1m
+        labels:
+          severity: warning
+          slo: latency
+        annotations:
+          summary: "{{ $labels.agent_name }} P95 latency above 3000ms (5m)"
+          description: "{{ $labels.agent_name }} P95 latency is {{ $value | printf \"%.0f\" }}ms over the last 5m (threshold 3000ms)."
+
+      - alert: PostgresConnectionsNearLimit
+        expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          slo: infra
+        annotations:
+          summary: "Postgres connection pool near limit"
+          description: "Postgres connections at {{ $value | printf \"%.0f\" }}% of max_connections for 5m+."

@@ -1,0 +1,63 @@
+# Agentic Observability Platform — Alertmanager routing config
+#
+# Local/demo default: every alert is routed to a tiny stdlib webhook logger
+# (see scripts/alert_webhook_logger.py, service "alert-webhook-logger" in
+# docker-compose) so firing/resolved alerts are visible with zero external
+# dependencies — just `docker compose logs -f alert-webhook-logger`.
+#
+# For real usage, add a Slack/PagerDuty/Opsgenie receiver (examples below,
+# commented out) and point the routes at it. Alertmanager does not expand
+# ${ENV_VARS} the way docker-compose does, so paste real webhook URLs/keys
+# directly into this file (and keep it out of version control) rather than
+# templating it.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: webhook-logger
+  group_by: ["alertname", "agent_name", "slo"]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 3h
+  routes:
+    # Fast-burn / page-severity alerts: nag more often, group fast.
+    - matchers:
+        - severity="page"
+      receiver: webhook-logger
+      group_wait: 5s
+      repeat_interval: 30m
+    # Slow-burn / ticket-severity alerts: less urgent.
+    - matchers:
+        - severity="ticket"
+      receiver: webhook-logger
+      repeat_interval: 6h
+
+receivers:
+  - name: webhook-logger
+    webhook_configs:
+      - url: "http://alert-webhook-logger:9096/alert"
+        send_resolved: true
+
+  # -- Example real-world receivers (uncomment + fill in to replace the demo logger) --
+  #
+  # - name: slack
+  #   slack_configs:
+  #     - api_url: "https://hooks.slack.com/services/REPLACE/ME/WITH_REAL_WEBHOOK"
+  #       channel: "#agent-alerts"
+  #       send_resolved: true
+  #       title: "{{ .CommonAnnotations.summary }}"
+  #       text: "{{ .CommonAnnotations.description }}"
+  #
+  # - name: pagerduty
+  #   pagerduty_configs:
+  #     - routing_key: "REPLACE_WITH_PAGERDUTY_INTEGRATION_KEY"
+  #       send_resolved: true
+
+inhibit_rules:
+  # A fast burn already implies a slow burn on the same SLO/agent — don't double-page.
+  - source_matchers:
+      - burn="fast"
+    target_matchers:
+      - burn="slow"
+    equal: ["agent_name", "slo"]

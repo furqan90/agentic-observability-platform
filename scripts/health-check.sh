@@ -12,7 +12,9 @@ test_svc() {
 }
 
 echo "=== Health check ==="
-test_svc "LangFuse"   "http://localhost:3000/api/public/health"
-test_svc "Grafana"    "http://localhost:3001/api/health"
-test_svc "Prometheus" "http://localhost:9090/-/healthy"
-test_svc "Collector"  "http://localhost:8889/metrics"
+test_svc "LangFuse"     "http://localhost:3000/api/public/health"
+test_svc "Grafana"      "http://localhost:3001/api/health"
+test_svc "Prometheus"   "http://localhost:9090/-/healthy"
+test_svc "Collector"    "http://localhost:8889/metrics"
+test_svc "Alertmanager" "http://localhost:9093/-/healthy"
+test_svc "Alert logger" "http://localhost:9095/healthz"

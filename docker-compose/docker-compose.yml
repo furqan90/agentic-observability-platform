@@ -66,7 +66,7 @@ services:
 
   # One-shot: create the langfuse bucket, then exit.
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     depends_on:
       minio:
         condition: service_healthy
@@ -122,8 +122,11 @@ services:
   prometheus:
     image: prom/prometheus:latest
     restart: unless-stopped
+    depends_on:
+      - alertmanager
     volumes:
       - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ../prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"
@@ -131,6 +134,34 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=30d"
       - "--web.enable-lifecycle"
+
+  # Receives firing/resolved alerts from Prometheus, groups/routes/dedupes them,
+  # then forwards to the configured receiver(s). Local demo default routes to
+  # alert-webhook-logger below; see alertmanager/alertmanager.yml for real
+  # Slack/PagerDuty receivers.
+  alertmanager:
+    image: prom/alertmanager:latest
+    restart: unless-stopped
+    volumes:
+      - ../alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+
+  # Zero-dependency demo alert receiver: stdlib Python HTTP server that prints
+  # every firing/resolved alert Alertmanager forwards to it. Swap for a real
+  # Slack/PagerDuty receiver in alertmanager.yml when you have credentials.
+  alert-webhook-logger:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    volumes:
+      - ../scripts/alert_webhook_logger.py:/app/alert_webhook_logger.py:ro
+    command: ["python", "/app/alert_webhook_logger.py"]
+    ports:
+      - "9096:9096"
 
   grafana:
     image: grafana/grafana:latest
@@ -208,3 +239,4 @@ volumes:
   minio_data:
   prometheus_data:
   grafana_data:
+  alertmanager_data:

@@ -118,7 +118,8 @@ docker compose -f docker-compose/docker-compose.yml --env-file .env up -d
 |--------------------|----------------------------------|------------------------------------|
 | LangFuse UI        | http://localhost:3000            | Default login: furqan@example.com / local |
 | Grafana            | http://localhost:3001            | admin / $GRAFANA_ADMIN_PASSWORD                  |
-| Prometheus         | http://localhost:9090            | Metrics store + targets view       |
+| Prometheus         | http://localhost:9090            | Metrics store + targets view + `/alerts` |
+| Alertmanager       | http://localhost:9093            | Alert routing/grouping UI          |
 | OTLP gRPC          | localhost:4317                   | Agents send spans here             |
 | OTLP HTTP          | localhost:4318                   | Agents send spans here (HTTP)      |
 | OTel metrics       | http://localhost:8889/metrics    | Prometheus scrapes this            |
@@ -160,6 +161,43 @@ python scripts/seed-eval-dataset.py
 
 ---
 
+## SLIs / SLOs / alerting demo
+
+Definitions live in `prometheus/rules/slo-alerts.yml` (recording rules + burn-rate
+alerts) and `alertmanager/alertmanager.yml` (routing). Two SLOs per agent:
+
+| SLO          | Target                  | Error budget (30d) |
+|--------------|-------------------------|---------------------|
+| Availability | 99.5% non-error calls   | 0.5%                |
+| Latency      | 95% of calls < 3000ms   | 5%                  |
+
+```powershell
+# Reload rules/alerting after editing slo-alerts.yml or alertmanager.yml
+docker compose -f docker-compose/docker-compose.yml --env-file .env restart prometheus alertmanager
+
+# Check rules loaded without errors
+start http://localhost:9090/rules
+start http://localhost:9090/alerts
+start http://localhost:9093
+
+# Run the breach demo (generates bad traffic until the burn-rate alerts fire)
+$env:LANGFUSE_PUBLIC_KEY = "pk-lf-local"
+$env:LANGFUSE_SECRET_KEY = "sk-lf-local"
+$env:LANGFUSE_HOST       = "http://localhost:3000"
+$env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318"
+$env:DEPLOY_ENV       = "local"
+python scripts/simulate_slo_breach.py --mode both --duration 240
+
+# Watch alerts land on the demo receiver (no Slack/PagerDuty needed)
+docker compose -f docker-compose/docker-compose.yml --env-file .env logs -f alert-webhook-logger
+```
+
+To route to a real Slack/PagerDuty destination instead of the demo logger,
+uncomment and fill in a receiver in `alertmanager/alertmanager.yml`, point
+`route.receiver` at it, then restart `alertmanager`.
+
+---
+
 ## Quick fixes
 
 ### LangFuse web crash-loops on first boot
@@ -176,4 +214,4 @@ Expected on Windows Docker Desktop. They're behind the `--profile linux` flag. H
 
 ### Port conflict on startup
 
-ClickHouse native port (9000) and MinIO S3 port (9000) would collide. In the override file MinIO is remapped to host port **9002**. If you see a port bind error, check nothing else on your machine uses 3000, 3001, 4317, 4318, 8889, or 9090.
+ClickHouse native port (9000) and MinIO S3 port (9000) would collide. In the override file MinIO is remapped to host port **9002**. If you see a port bind error, check nothing else on your machine uses 3000, 3001, 4317, 4318, 8889, 9090, 9093, or 9096.

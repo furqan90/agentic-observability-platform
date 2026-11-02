@@ -1,0 +1,73 @@
+{
+  "project": "product-catalog-platform",
+  "environment": "prod",
+  "region": "us-east-1",
+  "vpc": {
+    "name": "product-catalog-vpc",
+    "cidr": "10.0.0.0/16",
+    "availability_zones": ["us-east-1a", "us-east-1b"],
+    "internet_gateway": "product-catalog-igw",
+    "nat_gateways": [
+      {"name": "nat-gw-a", "az": "us-east-1a", "subnet": "public-10.0.0.0/24"},
+      {"name": "nat-gw-b", "az": "us-east-1b", "subnet": "public-10.0.1.0/24"}
+    ],
+    "subnets": {
+      "public": [
+        {"cidr": "10.0.0.0/24", "az": "us-east-1a"},
+        {"cidr": "10.0.1.0/24", "az": "us-east-1b"}
+      ],
+      "private_app": [
+        {"cidr": "10.0.10.0/24", "az": "us-east-1a"},
+        {"cidr": "10.0.11.0/24", "az": "us-east-1b"}
+      ],
+      "private_data": [
+        {"cidr": "10.0.20.0/24", "az": "us-east-1a"},
+        {"cidr": "10.0.21.0/24", "az": "us-east-1b"}
+      ]
+    },
+    "vpc_endpoints": [
+      {"service": "com.amazonaws.us-east-1.ecr.api", "type": "Interface"},
+      {"service": "com.amazonaws.us-east-1.ecr.dkr", "type": "Interface"},
+      {"service": "com.amazonaws.us-east-1.s3", "type": "Gateway"},
+      {"service": "com.amazonaws.us-east-1.secretsmanager", "type": "Interface"}
+    ]
+  },
+  "load_balancing": {
+    "alb": {
+      "name": "product-catalog-alb",
+      "scheme": "internet-facing",
+      "subnets": "public",
+      "listeners": [{"port": 443, "protocol": "HTTPS", "cert": "acm"}]
+    }
+  },
+  "compute": {
+    "eks_cluster": {
+      "name": "product-catalog-eks",
+      "version": "1.30",
+      "subnets": "private_app",
+      "node_groups": [
+        {"name": "app-ng", "instance_type": "t3.medium", "min": 2, "max": 6, "az_spread": ["us-east-1a", "us-east-1b"]}
+      ]
+    }
+  },
+  "database": {
+    "rds": {
+      "engine": "postgres",
+      "version": "16",
+      "multi_az": true,
+      "subnet_group": "private_data",
+      "primary_az": "us-east-1a",
+      "standby_az": "us-east-1b"
+    }
+  },
+  "dns": {
+    "route53_hosted_zone": "product-catalog.example.com"
+  },
+  "connectivity_notes": {
+    "internet_to_alb": "IGW routes inbound HTTPS to ALB in public subnets",
+    "alb_to_eks": "ALB targets EKS worker nodes in private app subnets (path-based routing)",
+    "eks_egress": "EKS nodes route outbound (image pulls, package updates) via NAT Gateway in same AZ",
+    "eks_to_rds": "EKS nodes reach RDS in private data subnets over VPC-internal routing, port 5432, no internet path",
+    "eks_to_aws_services": "EKS nodes reach ECR/S3/Secrets Manager via VPC endpoints, avoiding NAT/internet"
+  }
+}

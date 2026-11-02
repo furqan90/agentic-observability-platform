@@ -36,11 +36,12 @@
       {
         "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(calls_total, agent_name)",
+        "definition": "label_values(traces_span_metrics_calls_total, agent_name)",
         "includeAll": true,
+        "allValue": ".*",
         "multi": true,
         "name": "agent",
-        "query": { "query": "label_values(calls_total, agent_name)", "refId": "A" },
+        "query": { "query": "label_values(traces_span_metrics_calls_total, agent_name)", "refId": "A" },
         "refresh": 2,
         "sort": 1,
         "type": "query"
@@ -76,7 +77,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(calls_total{agent_name=~\"$agent\"}[5m])) by (agent_name)",
+          "expr": "sum(rate(traces_span_metrics_calls_total{agent_name=~\"$agent\"}[5m])) by (agent_name)",
           "legendFormat": "{{agent_name}}",
           "refId": "A"
         }
@@ -100,7 +101,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(calls_total{agent_name=~\"$agent\", status_code=\"STATUS_CODE_ERROR\"}[5m])) by (agent_name)",
+          "expr": "sum(rate(traces_span_metrics_calls_total{agent_name=~\"$agent\", status_code=\"STATUS_CODE_ERROR\"}[5m])) by (agent_name)",
           "legendFormat": "{{agent_name}} errors",
           "refId": "A"
         }
@@ -120,7 +121,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum(rate(duration_milliseconds_bucket{agent_name=~\"$agent\"}[5m])) by (le, agent_name))",
+          "expr": "histogram_quantile(0.95, sum(rate(traces_span_metrics_duration_milliseconds_bucket{agent_name=~\"$agent\"}[5m])) by (le, agent_name))",
           "legendFormat": "{{agent_name}} p95",
           "refId": "A"
         }
@@ -232,6 +233,134 @@
           "expr": "sum(pg_stat_activity_count) / max(pg_settings_max_connections) * 100",
           "legendFormat": "connections used %",
           "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "SLO / Error Budget  (recording rules + alerts in prometheus/rules/slo-alerts.yml)",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 },
+      "id": 102,
+      "panels": []
+    },
+    {
+      "id": 8,
+      "title": "Availability SLI  (target 99.5%)",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 35 },
+      "description": "Fraction of non-error calls over the last hour, per agent. Feeds the AgenticAvailabilitySLO*Burn alerts.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0.995 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "showThresholdLabels": false, "showThresholdMarkers": true },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "slo:agentic_availability:ratio_rate1h{agent_name=~\"$agent\"}",
+          "legendFormat": "{{agent_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Latency SLI  (target 95% < 3000ms)",
+      "type": "gauge",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 35 },
+      "description": "Fraction of calls completing under 3000ms over the last hour, per agent. Feeds the AgenticLatencySLO*Burn alerts.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 0.95 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "showThresholdLabels": false, "showThresholdMarkers": true },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "slo:agentic_latency:ratio_rate1h{agent_name=~\"$agent\"}",
+          "legendFormat": "{{agent_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Availability Error-Budget Burn Rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 43 },
+      "description": "1.0 = burning the 30d error budget exactly on schedule. 14.4x sustained over 5m+1h fires AgenticAvailabilitySLOFastBurn; 6x over 30m+6h fires the slow-burn ticket alert.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line", "fillOpacity": 10, "showPoints": "never",
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 6 }, { "color": "red", "value": 14.4 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "slo:agentic_availability:burn_rate1h{agent_name=~\"$agent\"}",
+          "legendFormat": "{{agent_name}} 1h burn",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "slo:agentic_availability:burn_rate6h{agent_name=~\"$agent\"}",
+          "legendFormat": "{{agent_name}} 6h burn",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Latency Error-Budget Burn Rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 43 },
+      "description": "1.0 = burning the 30d latency error budget exactly on schedule. Same 14.4x / 6x thresholds as availability.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "line", "fillOpacity": 10, "showPoints": "never",
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 6 }, { "color": "red", "value": 14.4 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "slo:agentic_latency:burn_rate1h{agent_name=~\"$agent\"}",
+          "legendFormat": "{{agent_name}} 1h burn",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "slo:agentic_latency:burn_rate6h{agent_name=~\"$agent\"}",
+          "legendFormat": "{{agent_name}} 6h burn",
+          "refId": "B"
         }
       ]
     }

@@ -365,7 +365,7 @@ volumes:
 
 ### `otel/otel-collector-config.yaml`
 
-This is the heart of the metrics fix. The `spanmetrics` connector turns incoming spans into RED metrics with **real, stable metric names** (`calls_total`, `duration_milliseconds_bucket`) that Prometheus can scrape.
+This is the heart of the metrics fix. The `spanmetrics` connector turns incoming spans into RED metrics with **real, stable metric names**. Note: Collector v0.153.0+ prefixes these `traces_span_metrics_calls_total` / `traces_span_metrics_duration_milliseconds_bucket` (not the bare `calls_total` / `duration_milliseconds_bucket` older docs may reference) — verify the actual name in your deployed Collector version via `/metrics` on :8889 before wiring dashboards or alerts to it.
 
 ```yaml
 receivers:
@@ -529,9 +529,9 @@ This dashboard is the **operational** view — its reason to exist is putting ag
 
 | Panel            | Metric / Query                                                                          | Visualization |
 |------------------|------------------------------------------------------------------------------------------|---------------|
-| Invocation Rate  | `sum(rate(calls_total[5m])) by (agent_name)`                                              | Time series   |
-| Error Rate       | `sum(rate(calls_total{status_code="STATUS_CODE_ERROR"}[5m])) by (agent_name)`             | Stat + alert  |
-| P95 Latency      | `histogram_quantile(0.95, sum(rate(duration_milliseconds_bucket[5m])) by (le, agent_name))` | Time series |
+| Invocation Rate  | `sum(rate(traces_span_metrics_calls_total[5m])) by (agent_name)`                                              | Time series   |
+| Error Rate       | `sum(rate(traces_span_metrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m])) by (agent_name)`             | Stat + alert  |
+| P95 Latency      | `histogram_quantile(0.95, sum(rate(traces_span_metrics_duration_milliseconds_bucket[5m])) by (le, agent_name))` | Time series |
 | Daily Token Cost | `sum(increase(agent_cost_usd_total[24h])) by (gen_ai_request_model)`                       | Bar chart     |
 
 **Infra correlation (the part LangFuse cannot show) — same dashboard, aligned time axis:**
