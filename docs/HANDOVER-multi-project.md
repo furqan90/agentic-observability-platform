@@ -1,9 +1,11 @@
 # Handover: multi-project Langfuse tracing
 
 Branch: `claude/multi-langfuse-projects-aubda9` (pushed, no PR yet)
-Status: **routing and ingress validated (see §3.0). The live Collector runs this config,
-with `agentic-coding-platform` registered. Real-agent default route, Grafana view and org
-API checks still open.**
+Status: **Phase 1 passed (see §3.0). The live Collector runs this config on the pinned
+image, with `agentic-coding-platform` registered. `pilot-agent` traces reach the default
+project, LiteLLM traces reach `agentic-coding-platform`, and the Grafana Project filter
+works. Open: `agent_name` through a real Collector (needs an app on SDK 0.3.0), lost
+traces, and the org API check.**
 Design and runbook: [`docs/MULTI-PROJECT.md`](MULTI-PROJECT.md). This file covers
 what's done, what isn't, and what to do next.
 
@@ -73,11 +75,13 @@ Python 3.11. `AGENT-ONBOARDING.md` covers moving an existing agent and the ingre
 variables. Running apps (`pilot-agent`, `pilot-agent-stable`, `hrp-api`) still have the
 old build, and no real app image has been rebuilt with 0.3.0 yet.
 
-Found along the way (none caused by this branch, none fixed yet):
+Fixed after validation: `@trace_agent` now sets `agent.name` on its root span, so RED
+panels can split by agent. Spans from older SDKs and non-SDK apps keep an empty
+`agent_name`, and the dashboard's Agent "All" still includes them. The Collector image
+is pinned to 0.153.0.
 
-- **`agent_name` is always empty on span metrics.** The SDK sets `agent.name` only on
-  `record_usage` metrics, never on spans: all 58 live series have no `agent_name`. RED
-  panels can't split by agent and the Agent dropdown has no values.
+Found along the way (not caused by this branch, not fixed yet):
+
 - **The SDK sometimes loses a trace on the host → published-port path.** Short-lived
   processes on Windows failed with "Failed to export spans batch" after about 11s. Rate:
   3/40 on this config, 4/40 on the pre-branch config, 0/600 for raw requests inside the
@@ -86,8 +90,6 @@ Found along the way (none caused by this branch, none fixed yet):
 - **`send_test_trace.py`'s "Metrics in Prom" check is weak.** It passes on any existing
   series, not this run's. It passed here even though this run's metrics went to a
   Collector that Prometheus doesn't scrape.
-- **`:latest` is only proven at 0.153.0**, the image cached locally. Pin it before a
-  fresh pull can change the version.
 
 ### Remaining steps
 

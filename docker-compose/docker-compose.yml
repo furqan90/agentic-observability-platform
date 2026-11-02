@@ -105,7 +105,8 @@ services:
       REDIS_PORT: ${REDIS_PORT}
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    # Pinned: routing config is validated against this version (docs/MULTI-PROJECT.md §6).
+    image: otel/opentelemetry-collector-contrib:0.153.0
     restart: unless-stopped
     depends_on:
       - langfuse-web
