@@ -1,6 +1,6 @@
 # Observability Platform — Command Reference
 
-All commands run from the **repo root** (`C:\Work\Projects\agentic_observability_platform`).
+All commands run from the **repo root** (`C:\Work\Projects\agentic-observability-platform`).
 
 ---
 

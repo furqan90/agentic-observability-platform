@@ -9,7 +9,7 @@ routing work identically regardless of the language an agent is written in.
 
 | Language | Package | Install | Status |
 |---|---|---|---|
-| **Python** | `agentic-observability-sdk` | `pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python"` | ✅ Available |
+| **Python** | `agentic-observability-sdk` | `pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic-observability-platform.git#subdirectory=sdk/python"` | ✅ Available |
 | **TypeScript / Node** | `@agentic/observability-sdk` | — | 🔲 Planned |
 
 ## Quick start (Python)
