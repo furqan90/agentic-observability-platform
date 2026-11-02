@@ -36,11 +36,26 @@
       {
         "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(calls_total, agent_name)",
+        "definition": "label_values(traces_span_metrics_calls_total, tl_project)",
+        "description": "Langfuse project (tl.project). 'unset' = agents without LANGFUSE_PROJECT (routed to the default project).",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "name": "project",
+        "label": "Project",
+        "query": { "query": "label_values(traces_span_metrics_calls_total, tl_project)", "refId": "A" },
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(traces_span_metrics_calls_total{tl_project=~\"$project\"}, agent_name)",
         "includeAll": true,
         "multi": true,
         "name": "agent",
-        "query": { "query": "label_values(calls_total, agent_name)", "refId": "A" },
+        "query": { "query": "label_values(traces_span_metrics_calls_total{tl_project=~\"$project\"}, agent_name)", "refId": "A" },
         "refresh": 2,
         "sort": 1,
         "type": "query"
@@ -76,7 +91,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(calls_total{agent_name=~\"$agent\"}[5m])) by (agent_name)",
+          "expr": "sum(rate(traces_span_metrics_calls_total{tl_project=~\"$project\", agent_name=~\"$agent\"}[5m])) by (agent_name)",
           "legendFormat": "{{agent_name}}",
           "refId": "A"
         }
@@ -100,7 +115,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(calls_total{agent_name=~\"$agent\", status_code=\"STATUS_CODE_ERROR\"}[5m])) by (agent_name)",
+          "expr": "sum(rate(traces_span_metrics_calls_total{tl_project=~\"$project\", agent_name=~\"$agent\", status_code=\"STATUS_CODE_ERROR\"}[5m])) by (agent_name)",
           "legendFormat": "{{agent_name}} errors",
           "refId": "A"
         }
@@ -120,7 +135,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum(rate(duration_milliseconds_bucket{agent_name=~\"$agent\"}[5m])) by (le, agent_name))",
+          "expr": "histogram_quantile(0.95, sum(rate(traces_span_metrics_duration_milliseconds_bucket{tl_project=~\"$project\", agent_name=~\"$agent\"}[5m])) by (le, agent_name))",
           "legendFormat": "{{agent_name}} p95",
           "refId": "A"
         }
@@ -141,8 +156,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(increase(agent_cost_usd_total[24h])) by (gen_ai_request_model)",
-          "legendFormat": "{{gen_ai_request_model}}",
+          "expr": "sum(increase(agent_cost_usd_total{tl_project=~\"$project\"}[24h])) by (tl_project, gen_ai_request_model)",
+          "legendFormat": "{{tl_project}} · {{gen_ai_request_model}}",
           "format": "time_series",
           "refId": "A"
         }
