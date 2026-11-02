@@ -16,7 +16,7 @@ process, and automating project provisioning through the Langfuse API.
 ```
 Agent (SDK)                          OTel Collector                                   Langfuse
 LANGFUSE_PROJECT=eka                 traces/in
-  └─► resource attr tl.project=eka ─► redaction ─► resource ─► batch ─┬─► routing/langfuse_projects
+  └─► resource attr tl.project=eka ─► [ingress pin] ─► redaction ─► batch ─┬─► routing/langfuse_projects
                                                                      │     tl.project == "eka"    ─► traces/langfuse-eka    ─► otlp_http/langfuse-eka    (Basic $LANGFUSE_OTEL_AUTH_EKA) ─► project "eka"
                                                                      │     tl.project == "agents" ─► traces/langfuse-agents ─► otlp_http/langfuse-agents (Basic $LANGFUSE_OTEL_AUTH)     ─► project "agents"
                                                                      │     missing / unknown      ─► traces/langfuse-agents  (default_project)
@@ -120,10 +120,24 @@ Langfuse project afterwards if needed.
 | `gen-collector-config.py --check` fails in CI | `projects.yaml`/template edited without regenerating | Run the generator and commit. |
 
 **Spoofing:** without ingress enforcement, any agent that can reach the Collector
-can set any slug and write into that project. Phase 4 (`nginx/nginx.conf`) ties each
-bearer token to a project and sends `X-Langfuse-Project`, which the Collector applies
-over the agent's own value. Use it wherever agents aren't fully trusted
-(client VMs).
+can set any slug and write into that project. Ingress binding fixes this:
+
+- `nginx/nginx.conf` → `map $http_authorization $client_project` ties each client
+  bearer token to a slug, and `proxy_set_header X-Langfuse-Project $client_project`
+  always sets the header itself. An empty mapping drops the header, so a client
+  can't inject its own value through the proxy.
+- The Collector's `resource/project_from_ingress` processor (first in `traces/in`,
+  receivers have `include_metadata: true`) upserts `tl.project` from that header.
+  Bound tokens therefore win over whatever the agent stamped. With no header,
+  nothing changes.
+- Bind **every external client token**. Unbound tokens (`""`) fall back to the
+  agent-supplied slug, which is fine for trusted internal agents.
+- Limitation: the override applies to traces (and therefore span metrics). The
+  SDK's `record_usage` cost counters still carry the agent-supplied `tl_project`
+  label.
+- The Collector's direct ports (4317/4318) bypass nginx. In production expose
+  only the ingress (as the AKS plan already requires), or the binding can be
+  sidestepped.
 
 ---
 
@@ -273,3 +287,4 @@ Langfuse `projectId` as an optional `langfuse_project_id:` field in
 | `otelcol-contrib validate` against the generated config | ⏳ not yet run. Needs a Collector binary or Docker |
 | End-to-end two-project trace (`send_test_trace.py` isolation check) | ⏳ needs the running stack with a second project |
 | Org API availability on our edition (§5.2) | ⏳ needs the running instance |
+| nginx token → project binding end to end (§3) | ⏳ needs nginx in front of the stack with a bound token |

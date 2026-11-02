@@ -6,8 +6,9 @@
 #   • push metrics (token/cost counters from SDK) → otlp receiver → Prometheus
 #
 # Multi-project routing (docs/MULTI-PROJECT.md):
-#   traces/in ──► attributes/redaction ─► resource ─► batch ─┬─► routing/langfuse_projects ─► traces/langfuse-<slug> ─► otlp_http/langfuse-<slug>
-#                                                            └─► span_metrics ─► metrics pipeline
+#   traces/in ──► resource/project_from_ingress ─► attributes/redaction ─► resource ─► batch
+#                   ─┬─► routing/langfuse_projects ─► traces/langfuse-<slug> ─► otlp_http/langfuse-<slug>
+#                    └─► span_metrics ─► metrics pipeline
 #   The `tl.project` resource attribute picks the project; missing/unknown
 #   values go to the default project (otel/projects.yaml: default_project).
 #
@@ -18,8 +19,10 @@
 receivers:
   otlp:
     protocols:
-      grpc: { endpoint: 0.0.0.0:4317 }
-      http: { endpoint: 0.0.0.0:4318 }
+      # include_metadata exposes request headers to processors, so the
+      # ingress-set X-Langfuse-Project header can pin the project (Phase 4).
+      grpc: { endpoint: 0.0.0.0:4317, include_metadata: true }
+      http: { endpoint: 0.0.0.0:4318, include_metadata: true }
 
 connectors:
   # "spanmetrics" alias is deprecated in v0.153.0+; use "span_metrics"
@@ -42,6 +45,13 @@ processors:
   resource:
     attributes:
       - { key: deployment.platform, value: platform, action: upsert }
+  # Ingress-bound project: nginx maps each client bearer token to a project and
+  # sets X-Langfuse-Project (nginx/nginx.conf). When present it overrides the
+  # agent-supplied tl.project, so a client cannot write into another team's
+  # project. Absent header → no-op, agent's tl.project is used.
+  resource/project_from_ingress:
+    attributes:
+      - { key: tl.project, from_context: metadata.x-langfuse-project, action: upsert }
   # Central PII / client-data redaction BEFORE traces reach any backend.
   # Tune the keys to match what your agents attach. (See plan §Security.)
   attributes/redaction:
@@ -65,7 +75,8 @@ service:
   pipelines:
     traces/in:
       receivers: [otlp]
-      processors: [attributes/redaction, resource, batch]
+      # project_from_ingress must run before batch: batch drops request metadata.
+      processors: [resource/project_from_ingress, attributes/redaction, resource, batch]
       exporters: [routing/langfuse_projects, span_metrics]
 @@PROJECT_PIPELINES@@
     metrics:

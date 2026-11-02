@@ -81,8 +81,15 @@ def test_ingest_pipeline_fans_out_to_routing_and_spanmetrics():
     p = cfg["service"]["pipelines"]["traces/in"]
     assert p["receivers"] == ["otlp"]
     assert p["exporters"] == ["routing/langfuse_projects", "span_metrics"]
+    procs = p["processors"]
+    # Ingress project pin reads request metadata, which batch drops → must precede batch.
+    assert procs.index("resource/project_from_ingress") < procs.index("batch")
     # PII redaction must run before anything leaves the ingest pipeline.
-    assert p["processors"][0] == "attributes/redaction"
+    assert procs.index("attributes/redaction") < procs.index("batch")
+    pin = cfg["processors"]["resource/project_from_ingress"]["attributes"][0]
+    assert pin == {"key": "tl.project", "from_context": "metadata.x-langfuse-project", "action": "upsert"}
+    for proto in ("grpc", "http"):
+        assert cfg["receivers"]["otlp"]["protocols"][proto]["include_metadata"] is True
     assert "tl.project" in [d["name"] for d in cfg["connectors"]["span_metrics"]["dimensions"]]
 
 
