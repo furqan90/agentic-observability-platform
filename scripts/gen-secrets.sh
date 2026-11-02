@@ -15,3 +15,7 @@ SEC="${LANGFUSE_INIT_PROJECT_SECRET_KEY:-sk-lf-local}"
 B64=$(printf '%s:%s' "$PUB" "$SEC" | base64 | tr -d '\n')
 echo "# Derived from keys '$PUB' / '$SEC' (override via env before running):"
 echo "LANGFUSE_OTEL_AUTH=$B64"
+echo
+echo "# Additional Langfuse projects: one LANGFUSE_OTEL_AUTH_<SLUG> per project in"
+echo "# otel/langfuse-projects.env -- list them with: python scripts/gen-collector-config.py --list-env"
+echo "# (docs/MULTI-PROJECT.md)"

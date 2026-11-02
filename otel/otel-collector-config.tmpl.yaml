@@ -1,0 +1,87 @@
+# Observability Platform — OpenTelemetry Collector config
+#
+# The fan-out heart of the platform:
+#   • spans  → routing connector → one LangFuse project per `tl.project`
+#   • spans  → span_metrics connector → RED metrics → Prometheus (ops)
+#   • push metrics (token/cost counters from SDK) → otlp receiver → Prometheus
+#
+# Multi-project routing (docs/MULTI-PROJECT.md):
+#   traces/in ──► resource/project_from_ingress ─► attributes/redaction ─► resource ─► batch
+#                   ─┬─► routing/langfuse_projects ─► traces/langfuse-<slug> ─► otlp_http/langfuse-<slug>
+#                    └─► span_metrics ─► metrics pipeline
+#   The `tl.project` resource attribute picks the project; missing/unknown
+#   values go to the default project (otel/projects.yaml: default_project).
+#
+# Metric naming (Collector v0.153.0+):
+#   calls_total  →  traces_span_metrics_calls_total
+#   duration_milliseconds  →  traces_span_metrics_duration_milliseconds
+@@GENERATED_NOTICE@@
+receivers:
+  otlp:
+    protocols:
+      # include_metadata exposes request headers to processors, so the
+      # ingress-set X-Langfuse-Project header can pin the project (Phase 4).
+      grpc: { endpoint: 0.0.0.0:4317, include_metadata: true }
+      http: { endpoint: 0.0.0.0:4318, include_metadata: true }
+
+connectors:
+  # "spanmetrics" alias is deprecated in v0.153.0+; use "span_metrics"
+  span_metrics:
+    histogram:
+      explicit:
+        buckets: [50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s, 30s]
+    dimensions:
+      - name: agent.name
+      - name: gen_ai.request.model
+      # Resource attribute set by the SDK (LANGFUSE_PROJECT). Prometheus label: tl_project
+      - name: tl.project
+        default: unset
+    metrics_flush_interval: 15s
+
+@@ROUTING_CONNECTOR@@
+
+processors:
+  batch: {}
+  resource:
+    attributes:
+      - { key: deployment.platform, value: platform, action: upsert }
+  # Ingress-bound project: nginx maps each client bearer token to a project and
+  # sets X-Langfuse-Project (nginx/nginx.conf). When present it overrides the
+  # agent-supplied tl.project, so a client cannot write into another team's
+  # project. Absent header → no-op, agent's tl.project is used.
+  resource/project_from_ingress:
+    attributes:
+      - { key: tl.project, from_context: metadata.x-langfuse-project, action: upsert }
+  # Central PII / client-data redaction BEFORE traces reach any backend.
+  # Tune the keys to match what your agents attach. (See plan §Security.)
+  attributes/redaction:
+    actions:
+      - { key: user.email, action: delete }
+      - { key: user.ip, action: delete }
+      - { key: client.ssn, action: delete }
+
+exporters:
+  # Traces → LangFuse via its native OTLP endpoint, one exporter per project.
+  # Each Authorization header is base64("public_key:secret_key") of that project.
+  # "otlphttp" alias deprecated in v0.153.0+; use "otlp_http"
+@@LANGFUSE_EXPORTERS@@
+
+  # Metrics → Prometheus scrape endpoint on :8889
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    enable_open_metrics: true
+
+service:
+  pipelines:
+    traces/in:
+      receivers: [otlp]
+      # project_from_ingress must run before batch: batch drops request metadata.
+      processors: [resource/project_from_ingress, attributes/redaction, resource, batch]
+      exporters: [routing/langfuse_projects, span_metrics]
+@@PROJECT_PIPELINES@@
+    metrics:
+      # otlp: accepts push metrics from SDK (token/cost counters via OTLP /v1/metrics)
+      # span_metrics: receives RED metrics generated from the traces pipeline above
+      receivers: [otlp, span_metrics]
+      processors: [batch]
+      exporters: [prometheus]

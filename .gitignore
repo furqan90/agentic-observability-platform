@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# Per-project Langfuse OTLP auth for the Collector (see otel/projects.yaml)
+otel/langfuse-projects.env
 
 # ── Python ───────────────────────────────────────────────────────
 __pycache__/

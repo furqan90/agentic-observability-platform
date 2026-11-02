@@ -20,8 +20,19 @@ stays clean of the langfuse dependency and the swap-point rule is preserved.
 import asyncio
 from functools import wraps
 
+from opentelemetry import trace as otel_trace
+
 # Import via tracer.py -- the sole langfuse gateway -- not from langfuse directly.
 from .tracer import _observe, _propagate_attributes
+
+
+def _mark_agent_span(name: str) -> None:
+    """Set `agent.name` on the agent's root span (Prometheus label: agent_name).
+
+    Root span only, so RED panels count one call per agent run rather than
+    also counting its tool and LLM child spans.
+    """
+    otel_trace.get_current_span().set_attribute("agent.name", name)
 
 
 def trace_agent(name: str, tags: list[str] | None = None, user_id: str | None = None):
@@ -34,6 +45,7 @@ def trace_agent(name: str, tags: list[str] | None = None, user_id: str | None = 
             @wraps(fn)
             @_observe(name=name)
             async def async_wrapper(*args, **kwargs):
+                _mark_agent_span(name)
                 with _propagate_attributes(
                     tags=tags or [],
                     user_id=user_id,
@@ -45,6 +57,7 @@ def trace_agent(name: str, tags: list[str] | None = None, user_id: str | None = 
             @wraps(fn)
             @_observe(name=name)
             def sync_wrapper(*args, **kwargs):
+                _mark_agent_span(name)
                 with _propagate_attributes(
                     tags=tags or [],
                     user_id=user_id,

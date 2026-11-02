@@ -1,0 +1,41 @@
+# Langfuse project registry — the single list of projects the Collector can
+# route traces into. Agents select a project by stamping the `tl.project`
+# resource attribute (SDK: set LANGFUSE_PROJECT=<slug>).
+#
+# After editing this file:
+#   python scripts/gen-collector-config.py          # regenerates otel/otel-collector-config.yaml
+#   python scripts/gen-collector-config.py --list-env   # env vars the Collector now needs
+#   docker compose -f docker-compose/docker-compose.yml up -d otel-collector   # reload
+#
+# Full runbook: docs/MULTI-PROJECT.md
+#
+# Fields
+#   langfuse_endpoint   OTLP endpoint used when a project does not set its own.
+#   default_project     Slug that receives traces with a missing or unknown
+#                       `tl.project`. Must be listed under `projects`.
+#   projects.<slug>     Lowercase slug: [a-z0-9][a-z0-9_-]*
+#     auth_env          Env var holding base64("<public_key>:<secret_key>") for
+#                       that project. Defaults to LANGFUSE_OTEL_AUTH_<SLUG>
+#                       (uppercased, '-' -> '_').
+#     endpoint          Optional per-project OTLP endpoint (e.g. a project that
+#                       lives on a different Langfuse instance during a migration).
+#     description       Free text, documentation only.
+
+langfuse_endpoint: http://langfuse-web:3000/api/public/otel
+
+default_project: agents
+
+projects:
+  agents:
+    # The project created by LANGFUSE_INIT_* on first boot. Keeps the original
+    # single-project env var name so existing deployments need no change.
+    auth_env: LANGFUSE_OTEL_AUTH
+    description: Default project (bootstrap). Catch-all for unknown/missing tl.project.
+
+  agentic-coding-platform:
+    description: OpenCode + LiteLLM proxy (agentic-coding-platform repo)
+
+  # Example — uncomment, create the project in the Langfuse UI, put its keys in
+  # otel/langfuse-projects.env as LANGFUSE_OTEL_AUTH_EKA, then regenerate.
+  # eka:
+  #   description: EKA team agents

@@ -20,7 +20,7 @@ for stamping them — agent code should never set them directly.
 | `tl.env` | string | ✅ | `prod` \| `staging` \| `dev` |
 | `tl.user_id` | string | ✅ | `sha256(AAD UPN)` — NEVER plaintext |
 | `tl.session_id` | string | ✅ | UUID. Conversation/session boundary |
-| `tl.project` | string | ✅ | Maps to LangFuse project slug |
+| `tl.project` | string | optional | LangFuse project slug (`otel/projects.yaml`). Set as an OTel **resource** attribute when `LANGFUSE_PROJECT` is set. The Collector routes traces on it. Unknown/missing → default project |
 | `tl.cost_center` | string | ✅ | Finance rollup code. e.g. `AI-OPS-001` |
 
 **User ID rule:** Hash at the SDK layer using `sha256(upn)`. Never allow a
@@ -134,12 +134,20 @@ the `traceparent` provides the OTel-level parent-child link. Both are required.
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `LANGFUSE_PUBLIC_KEY` | ✅ | LangFuse project public key |
-| `LANGFUSE_SECRET_KEY` | ✅ | LangFuse project secret key |
+| `LANGFUSE_PUBLIC_KEY` | ✅ | LangFuse project public key (same project as `LANGFUSE_PROJECT`) |
+| `LANGFUSE_SECRET_KEY` | ✅ | LangFuse project secret key (same project as `LANGFUSE_PROJECT`) |
+| `LANGFUSE_PROJECT` | optional | Project slug → `tl.project` resource attribute. Picks the LangFuse project on the Collector path. Unset → default project |
 | `LANGFUSE_HOST` | ✅ | LangFuse web URL (auth handshake only) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | ✅ | OTel Collector HTTP endpoint (`:4318`) |
 | `DEPLOY_ENV` | ✅ | `prod` \| `staging` \| `dev` |
 | `OTEL_SERVICE_NAME` | optional | Overrides `service.name` resource attribute |
+
+**Project routing:** on the Collector path, the `tl.project` **resource** attribute
+alone picks the LangFuse project. Credentials never leave the platform. When
+`LANGFUSE_PROJECT` is set, every SDK MUST stamp it on the trace *and* metric resource.
+Every SDK MUST also add a `tl.project` datapoint attribute on the token/cost counters
+(Prometheus label `tl_project`), using `unset` when there is no project.
+One project per process. See `docs/MULTI-PROJECT.md`.
 
 **Important:** `LANGFUSE_HOST` and `OTEL_EXPORTER_OTLP_ENDPOINT` point at
 different services. `LANGFUSE_HOST` is for key auth only. Spans and metrics
@@ -152,7 +160,8 @@ directly at LangFuse bypasses PII redaction and spanmetrics.
 
 Before shipping a new language SDK, verify:
 
-- [ ] All 8 metadata envelope attributes stamped on every root trace
+- [ ] All required metadata envelope attributes stamped on every root trace
+- [ ] `tl.project` stamped on the OTel trace + metric **resource** when `LANGFUSE_PROJECT` is set
 - [ ] All required public API functions implemented
 - [ ] Span naming follows §3 conventions
 - [ ] OTel attribute names match §4 exactly

@@ -148,6 +148,34 @@ docker compose -f docker-compose/docker-compose.yml --env-file .env restart lang
 
 ---
 
+## Langfuse projects (multi-project routing)
+
+Full runbook: [`docs/MULTI-PROJECT.md`](docs/MULTI-PROJECT.md).
+
+```powershell
+# 1. Create the project in the Langfuse UI, then create its API keys.
+# 2. Add it to otel/projects.yaml, then regenerate the Collector config:
+python scripts/gen-collector-config.py
+python scripts/gen-collector-config.py --list-env      # which env vars the Collector needs
+# 3. Put base64("pk:sk") into otel/langfuse-projects.env as LANGFUSE_OTEL_AUTH_<SLUG>
+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("pk-lf-...:sk-lf-..."))
+# 4. Reload the Collector (recreate so the env file is re-read)
+docker compose -f docker-compose/docker-compose.yml --env-file .env up -d --force-recreate otel-collector
+# 5. Verify routing + isolation
+$env:LANGFUSE_PROJECT = "eka"
+$env:LANGFUSE_PUBLIC_KEY = "pk-lf-<eka>"; $env:LANGFUSE_SECRET_KEY = "sk-lf-<eka>"
+$env:DEFAULT_LANGFUSE_PUBLIC_KEY = "pk-lf-local"; $env:DEFAULT_LANGFUSE_SECRET_KEY = "sk-lf-local"
+python scripts/send_test_trace.py
+```
+
+```powershell
+# CI / pre-commit: fail if the committed collector config is stale
+python scripts/gen-collector-config.py --check
+pytest scripts/tests sdk/python/tests
+```
+
+---
+
 ## Eval dataset
 
 ```powershell
