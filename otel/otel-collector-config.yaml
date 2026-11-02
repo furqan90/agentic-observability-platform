@@ -1,14 +1,25 @@
 # Observability Platform — OpenTelemetry Collector config
 #
 # The fan-out heart of the platform:
-#   • spans  → LangFuse v3 via its native OTLP endpoint (tracing / eval / cost)
+#   • spans  → routing connector → one LangFuse project per `tl.project`
 #   • spans  → span_metrics connector → RED metrics → Prometheus (ops)
 #   • push metrics (token/cost counters from SDK) → otlp receiver → Prometheus
+#
+# Multi-project routing (docs/MULTI-PROJECT.md):
+#   traces/in ──► attributes/redaction ─► resource ─► batch ─┬─► routing/langfuse_projects ─► traces/langfuse-<slug> ─► otlp_http/langfuse-<slug>
+#                                                            └─► span_metrics ─► metrics pipeline
+#   The `tl.project` resource attribute picks the project; missing/unknown
+#   values go to the default project (otel/projects.yaml: default_project).
 #
 # Metric naming (Collector v0.153.0+):
 #   calls_total  →  traces_span_metrics_calls_total
 #   duration_milliseconds  →  traces_span_metrics_duration_milliseconds
-
+#
+# ─────────────────────────────────────────────────────────────────────
+#  GENERATED FILE — do not edit by hand.
+#  Edit otel/otel-collector-config.tmpl.yaml and/or otel/projects.yaml, then run:
+#    python scripts/gen-collector-config.py
+# ─────────────────────────────────────────────────────────────────────
 receivers:
   otlp:
     protocols:
@@ -24,7 +35,20 @@ connectors:
     dimensions:
       - name: agent.name
       - name: gen_ai.request.model
+      # Resource attribute set by the SDK (LANGFUSE_PROJECT). Prometheus label: tl_project
+      - name: tl.project
+        default: unset
     metrics_flush_interval: 15s
+
+  # Routes each resource's spans to its Langfuse project by `tl.project`.
+  # Missing / unknown project → default_pipelines (the default project).
+  routing/langfuse_projects:
+    default_pipelines: [traces/langfuse-agents]
+    error_mode: ignore
+    table:
+      - context: resource
+        condition: attributes["tl.project"] == "agents"
+        pipelines: [traces/langfuse-agents]
 
 processors:
   batch: {}
@@ -40,12 +64,13 @@ processors:
       - { key: client.ssn, action: delete }
 
 exporters:
-  # Traces → LangFuse via its native OTLP endpoint.
+  # Traces → LangFuse via its native OTLP endpoint, one exporter per project.
+  # Each Authorization header is base64("public_key:secret_key") of that project.
   # "otlphttp" alias deprecated in v0.153.0+; use "otlp_http"
-  otlp_http/langfuse:
+  # project: agents (default)
+  otlp_http/langfuse-agents:
     endpoint: http://langfuse-web:3000/api/public/otel
     headers:
-      # base64("public_key:secret_key") — injected from the LANGFUSE_OTEL_AUTH env var.
       Authorization: "Basic ${env:LANGFUSE_OTEL_AUTH}"
 
   # Metrics → Prometheus scrape endpoint on :8889
@@ -55,10 +80,13 @@ exporters:
 
 service:
   pipelines:
-    traces:
+    traces/in:
       receivers: [otlp]
       processors: [attributes/redaction, resource, batch]
-      exporters: [otlp_http/langfuse, span_metrics]
+      exporters: [routing/langfuse_projects, span_metrics]
+    traces/langfuse-agents:
+      receivers: [routing/langfuse_projects]
+      exporters: [otlp_http/langfuse-agents]
     metrics:
       # otlp: accepts push metrics from SDK (token/cost counters via OTLP /v1/metrics)
       # span_metrics: receives RED metrics generated from the traces pipeline above

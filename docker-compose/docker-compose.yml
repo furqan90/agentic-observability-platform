@@ -111,8 +111,15 @@ services:
       - langfuse-web
     volumes:
       - ../otel/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+    # Per-project Langfuse OTLP auth (LANGFUSE_OTEL_AUTH_<SLUG>) for every
+    # non-default project in otel/projects.yaml. Optional: absent = default only.
+    # List what is needed: python scripts/gen-collector-config.py --list-env
+    env_file:
+      - path: ../otel/langfuse-projects.env
+        required: false
     environment:
-      # Consumed by ${env:LANGFUSE_OTEL_AUTH} in the collector config.
+      # Default project (otel/projects.yaml: default_project) — the bootstrap
+      # project from LANGFUSE_INIT_*. Consumed by ${env:LANGFUSE_OTEL_AUTH}.
       LANGFUSE_OTEL_AUTH: ${LANGFUSE_OTEL_AUTH}
     ports:
       - "4317:4317"   # OTLP gRPC (agents send here)
