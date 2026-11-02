@@ -120,6 +120,7 @@ Langfuse project afterwards if needed.
 | `tl_project="unset"` in Grafana | Agent doesn't set `LANGFUSE_PROJECT` | Routed to the default project. |
 | SDK warning "global TracerProvider is already registered" | Another library set up OTel before `get_tracer()` | `tl.project` can't be added to that provider's resource. Set `OTEL_RESOURCE_ATTRIBUTES=tl.project=<slug>` or call `get_tracer()` first. |
 | `gen-collector-config.py --check` fails in CI | `projects.yaml`/template edited without regenerating | Run the generator and commit. |
+| App logs `Failed to export`, or a trace is missing some spans | Intermittent failures on the host → published-port path (`localhost`, `host.docker.internal`). Cause unknown, and it also happens with the pre-multi-project config | That batch of spans is lost. A trace can arrive with a gap and still look normal, so check the app's log. Not a routing problem: nothing reaches the wrong project. |
 
 **Spoofing:** without ingress enforcement, any agent that can reach the Collector
 can set any slug and write into that project. Ingress binding fixes this:
@@ -293,5 +294,7 @@ Langfuse `projectId` as an optional `langfuse_project_id:` field in
 | End-to-end two-project trace in real Langfuse (`send_test_trace.py` isolation check) | ✅ pass through the live Collector with project `agentic-coding-platform`. A lost export can make a run fail, so retry before debugging routing (2 of 3 runs were lost here) |
 | Default route with a real agent on the live Collector | ✅ one `pilot-agent` request (SDK 0.2.0, no project) landed in the default project and not in `agentic-coding-platform` |
 | Grafana panels and Project variable with `tl_project` data | ✅ viewed in Grafana: Project dropdown present, and filtering to `agentic-coding-platform` removes `pilot-agent` traffic from the panels. Reload the page if the dropdown is missing |
-| `agent_name` label from a real span through the Collector | ⏳ the unit test proves the span attribute. Needs the first app rebuilt on SDK 0.3.0 |
+| `agent_name` label from a real span through the Collector | ✅ a real `pilot-agent` request on SDK 0.3.0 shows `agent_name="secp-pilot-advisor"` in Prometheus |
+| LiteLLM (no SDK) through the live Collector | ✅ a real request through the proxy reached `agentic-coding-platform` and not the default project |
+| Export reliability on the host → published-port path | ⚠️ intermittent failures, cause unknown. See the failure table in §3 |
 | Org API availability on our edition (§5.2) | ⏳ needs an org key from the UI. A project key gets 403, which says nothing about the edition. `.env` sets no `LANGFUSE_EE_LICENSE_KEY` or `ADMIN_API_KEY` |

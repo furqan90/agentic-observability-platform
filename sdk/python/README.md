@@ -17,7 +17,7 @@ Instrumentation facade for all agent projects.
 pip install -e ./sdk/python
 
 # From GitHub (agent projects outside the monorepo)
-pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python"
+pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic-observability-platform.git#subdirectory=sdk/python"
 ```
 
 ### Env vars (set on every agent host)
