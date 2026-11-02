@@ -5,6 +5,14 @@ Sends a synthetic agent trace through the full pipeline and confirms:
   1. Trace arrives in LangFuse  (via LangFuse API)
   2. spanmetrics arrive in Prometheus (via Prometheus HTTP API)
   3. The OTel Collector was the routing path (not direct-to-LangFuse)
+  4. (multi-project) The trace landed in LANGFUSE_PROJECT and NOT in the
+     default project -- when DEFAULT_LANGFUSE_PUBLIC_KEY/SECRET_KEY are given
+
+Multi-project routing check (see docs/MULTI-PROJECT.md):
+    LANGFUSE_PROJECT=eka                       # slug from otel/projects.yaml
+    LANGFUSE_PUBLIC_KEY / SECRET_KEY           # keys of the *eka* project
+    DEFAULT_LANGFUSE_PUBLIC_KEY=pk-lf-local    # keys of the default project (optional)
+    DEFAULT_LANGFUSE_SECRET_KEY=sk-lf-local
 
 Usage:
     # Windows (PowerShell) -- from repo root
@@ -31,6 +39,7 @@ import base64
 import urllib.request
 import urllib.error
 import json
+import uuid
 
 # -- allow running from repo root without installing the SDK ------------------
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sdk", "python"))
@@ -44,6 +53,11 @@ PROMETHEUS    = os.environ.get("PROMETHEUS_URL", "http://localhost:9090")
 PUB_KEY       = os.environ["LANGFUSE_PUBLIC_KEY"]
 SEC_KEY       = os.environ["LANGFUSE_SECRET_KEY"]
 AGENT_NAME    = "test-trace-agent"
+PROJECT       = os.environ.get("LANGFUSE_PROJECT") or None
+DEFAULT_PUB   = os.environ.get("DEFAULT_LANGFUSE_PUBLIC_KEY")
+DEFAULT_SEC   = os.environ.get("DEFAULT_LANGFUSE_SECRET_KEY")
+# Unique per run, so a trace from an earlier run can never produce a false pass.
+RUN_TAG       = f"run-{uuid.uuid4().hex[:12]}"
 
 # -- helper -------------------------------------------------------------------
 
@@ -58,9 +72,20 @@ def http_get(url, headers=None):
         return 0, {"error": str(e)}
 
 
-def lf_auth():
+def lf_auth(pub=PUB_KEY, sec=SEC_KEY):
     return {"Authorization": "Basic " + base64.b64encode(
-        f"{PUB_KEY}:{SEC_KEY}".encode()).decode()}
+        f"{pub}:{sec}".encode()).decode()}
+
+
+def find_trace(auth):
+    code, body = http_get(
+        f"{LANGFUSE_HOST}/api/public/traces?limit=5&tags={RUN_TAG}", headers=auth,
+    )
+    if code != 200:
+        return code, None, 0
+    traces = body.get("data", [])
+    matching = [t for t in traces if t.get("name") == AGENT_NAME]
+    return code, (matching[0] if matching else None), len(traces)
 
 
 # -- step 1 -- initialise SDK --------------------------------------------------
@@ -69,6 +94,8 @@ print("\n=== Observability Platform - end-to-end trace test ===\n")
 print(f"  LANGFUSE_HOST              : {LANGFUSE_HOST}")
 print(f"  OTEL_EXPORTER_OTLP_ENDPOINT: {os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT', '(not set -- direct path)')}")
 print(f"  DEPLOY_ENV              : {os.environ.get('DEPLOY_ENV', 'local')}")
+print(f"  LANGFUSE_PROJECT           : {PROJECT or '(not set -- default project)'}")
+print(f"  run tag                    : {RUN_TAG}")
 print()
 
 print("[1/4] Initialising SDK...")
@@ -84,7 +111,7 @@ def fake_retrieval(query: str) -> list:
     time.sleep(0.05)   # simulate latency
     return ["doc-1", "doc-2"]
 
-@trace_agent(name=AGENT_NAME, tags=["smoke-test", "local"])
+@trace_agent(name=AGENT_NAME, tags=["smoke-test", "local", RUN_TAG])
 def run_test_agent(user_input: str) -> str:
     docs = fake_retrieval(user_input)
     # Simulate a cheap LLM call (no real API key needed for trace testing)
@@ -110,15 +137,9 @@ found_trace   = False
 
 for attempt in range(MAX_WAIT // POLL_INTERVAL):
     time.sleep(POLL_INTERVAL)
-    code, body = http_get(
-        f"{LANGFUSE_HOST}/api/public/traces?limit=5&tags=smoke-test",
-        headers=lf_auth(),
-    )
+    code, t, seen = find_trace(lf_auth())
     if code == 200:
-        traces = body.get("data", [])
-        matching = [t for t in traces if t.get("name") == AGENT_NAME]
-        if matching:
-            t = matching[0]
+        if t:
             print(f"      [OK] Trace found in LangFuse!")
             print(f"        id        : {t.get('id')}")
             print(f"        name      : {t.get('name')}")
@@ -126,14 +147,33 @@ for attempt in range(MAX_WAIT // POLL_INTERVAL):
             print(f"        createdAt : {t.get('createdAt')}")
             found_trace = True
             break
-        print(f"      ... waiting (attempt {attempt+1}, {len(traces)} traces seen, none matching yet)")
+        print(f"      ... waiting (attempt {attempt+1}, {seen} traces seen, none matching yet)")
     else:
         print(f"      ... LangFuse API returned HTTP {code}")
 
 if not found_trace:
-    print("      [FAIL] Trace NOT found in LangFuse after {MAX_WAIT}s")
+    print(f"      [FAIL] Trace NOT found in LangFuse after {MAX_WAIT}s")
+    if PROJECT:
+        print(f"        Is '{PROJECT}' in otel/projects.yaml, and do LANGFUSE_PUBLIC_KEY/SECRET_KEY")
+        print("        belong to that project? Unknown slugs are routed to the default project.")
     print("        Check: docker compose logs langfuse-web --tail 30")
     print("        Check: docker compose logs otel-collector --tail 30")
+
+# -- step 3b -- routing isolation (multi-project) ------------------------------
+
+isolation = None   # None = not checked
+if found_trace and PROJECT and DEFAULT_PUB and DEFAULT_SEC and DEFAULT_PUB != PUB_KEY:
+    print(f"[3b ] Checking the trace did NOT land in the default project...")
+    code, t, _ = find_trace(lf_auth(DEFAULT_PUB, DEFAULT_SEC))
+    if code != 200:
+        print(f"      [FAIL] default-project API returned HTTP {code}")
+        isolation = False
+    elif t:
+        print("      [FAIL] Trace ALSO found in the default project -- routing is not isolating")
+        isolation = False
+    else:
+        print(f"      [OK] Not in the default project -- routed to '{PROJECT}' only")
+        isolation = True
 
 # -- step 4 -- verify spanmetrics in Prometheus --------------------------------
 
@@ -165,11 +205,13 @@ print()
 print("=== Summary ===")
 print(f"  Trace in LangFuse  : {'[OK] PASS' if found_trace   else '[FAIL] FAIL'}")
 print(f"  Metrics in Prom    : {'[OK] PASS' if found_metrics else '~ CHECK MANUALLY'}")
+if isolation is not None:
+    print(f"  Project isolation  : {'[OK] PASS' if isolation else '[FAIL] FAIL'}")
 print()
 if found_trace:
-    print(f"  View trace : {LANGFUSE_HOST}/project/agents/traces")
+    print(f"  View trace : {LANGFUSE_HOST}  (project: {PROJECT or 'default'}, tag: {RUN_TAG})")
 print(f"  View metrics: http://localhost:9090/graph?g0.expr={PROM_METRIC}")
 print(  "  View Grafana : http://localhost:3001")
 print()
-if not found_trace:
+if not found_trace or isolation is False:
     sys.exit(1)

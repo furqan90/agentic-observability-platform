@@ -20,3 +20,7 @@ $pair = "{0}:{1}" -f $pub, $sec
 $b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
 Write-Host "# Derived from keys '$pub' / '$sec' (override via env before running):"
 Write-Host "LANGFUSE_OTEL_AUTH=$b64"
+Write-Host ""
+Write-Host "# Additional Langfuse projects: one LANGFUSE_OTEL_AUTH_<SLUG> per project in"
+Write-Host "# otel/langfuse-projects.env -- list them with: python scripts/gen-collector-config.py --list-env"
+Write-Host "# (docs/MULTI-PROJECT.md)"

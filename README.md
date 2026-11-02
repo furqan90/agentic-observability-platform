@@ -47,6 +47,13 @@ Agents ──OTel──► Nginx/Ingress ──► OTel Collector ─┬─ trac
 First boot bootstraps an org/project/keys from the `LANGFUSE_INIT_*` vars, so
 agents can trace immediately (see `.env.example`).
 
+### Multiple Langfuse projects
+
+Traces are routed to a Langfuse project by the `tl.project` attribute (SDK:
+`LANGFUSE_PROJECT=<slug>`). Projects are listed in `otel/projects.yaml`, and
+unknown/missing slugs land in the default (bootstrap) project. To add a project:
+[`docs/MULTI-PROJECT.md`](docs/MULTI-PROJECT.md).
+
 ## Instrument an agent
 
 > **Full onboarding guide → [`sdk/AGENT-ONBOARDING.md`](sdk/AGENT-ONBOARDING.md)**
@@ -72,7 +79,8 @@ portability swap point. Details in [`sdk/README.md`](sdk/README.md).
 
 ```
 docker-compose/   Stage 1 local stack (this) + local override
-otel/             OTel Collector config (spanmetrics fan-out + PII redaction)
+otel/             OTel Collector config (generated from projects.yaml + template; routing, spanmetrics, PII redaction)
+docs/             MULTI-PROJECT.md: project routing runbook + future provisions
 prometheus/       scrape config (collector + infra exporters)
 grafana/          provisioned datasource + agent-ops dashboard
 nginx/            reverse proxy / TLS model for the phone-home boundary
