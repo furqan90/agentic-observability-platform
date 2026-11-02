@@ -20,11 +20,12 @@ pip install -e ./sdk/python
 pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python"
 ```
 
-### Five env vars (set on every agent host)
+### Six env vars (set on every agent host)
 
 ```env
-LANGFUSE_PUBLIC_KEY=pk-lf-local
+LANGFUSE_PUBLIC_KEY=pk-lf-local     # keys of the project below
 LANGFUSE_SECRET_KEY=sk-lf-local
+LANGFUSE_PROJECT=agents             # project slug (otel/projects.yaml); unset -> default project
 LANGFUSE_HOST=http://<platform-host>:3000
 OTEL_EXPORTER_OTLP_ENDPOINT=http://<platform-host>:4318
 DEPLOY_ENV=local

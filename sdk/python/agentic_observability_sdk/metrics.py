@@ -9,6 +9,8 @@ import os
 
 from opentelemetry import metrics as otel_metrics
 
+from .tracer import PROJECT_ATTR, get_project
+
 _metrics_initialised = False
 
 # Counters are created lazily (inside _get_counters) so they are always bound
@@ -34,10 +36,14 @@ def init_metrics() -> None:
         from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
         from opentelemetry.sdk.resources import Resource
 
-        resource = Resource.create({
+        attrs = {
             "service.name": os.environ.get("OTEL_SERVICE_NAME", "agent"),
             "deployment.environment": os.environ.get("DEPLOY_ENV", "local"),
-        })
+        }
+        project = get_project()
+        if project:
+            attrs[PROJECT_ATTR] = project
+        resource = Resource.create(attrs)
         reader = PeriodicExportingMetricReader(OTLPMetricExporter())
         otel_metrics.set_meter_provider(
             MeterProvider(resource=resource, metric_readers=[reader])
@@ -67,6 +73,13 @@ def _get_counters():
     return _tokens, _cost
 
 
+def _project_label() -> str:
+    """Datapoint label for tl.project (Prometheus: tl_project). Resource
+    attributes do not become Prometheus labels, so it is set per datapoint.
+    Matches span_metrics' `default: unset` for agents without a project."""
+    return get_project() or "unset"
+
+
 def record_usage(
     agent: str,
     model: str,
@@ -85,10 +98,9 @@ def record_usage(
     """
     try:
         tokens, cost = _get_counters()
-        attrs_in  = {"agent.name": agent, "gen_ai.request.model": model, "token.type": "input"}
-        attrs_out = {"agent.name": agent, "gen_ai.request.model": model, "token.type": "output"}
-        tokens.add(input_tokens, attrs_in)
-        tokens.add(output_tokens, attrs_out)
-        cost.add(cost_usd, {"agent.name": agent, "gen_ai.request.model": model})
+        base = {"agent.name": agent, "gen_ai.request.model": model, PROJECT_ATTR: _project_label()}
+        tokens.add(input_tokens, {**base, "token.type": "input"})
+        tokens.add(output_tokens, {**base, "token.type": "output"})
+        cost.add(cost_usd, base)
     except Exception:
         pass

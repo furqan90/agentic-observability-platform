@@ -14,7 +14,7 @@ See ``AGENT-ONBOARDING.md`` for the full walkthrough.
 """
 
 from .tracer import (
-    get_tracer, shutdown,
+    get_tracer, shutdown, get_project,
     get_langchain_handler, get_openai_client, get_anthropic_client,
     get_propagation_headers, restore_propagation_context,
 )
@@ -25,6 +25,7 @@ __all__ = [
     # Core
     "get_tracer",
     "shutdown",
+    "get_project",                    # LANGFUSE_PROJECT slug (tl.project) or None
     # Decorators
     "trace_agent",
     "trace_tool",

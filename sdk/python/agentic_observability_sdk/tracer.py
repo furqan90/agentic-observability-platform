@@ -1,11 +1,14 @@
 """
 LangFuse tracer -- the ONLY module allowed to import ``langfuse``.
 
-Reads LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST from env.
+Reads LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST and
+LANGFUSE_PROJECT from env.
 If we ever leave LangFuse, we rewrite this one file -- not N agents.
 """
 
 import os
+import re
+import warnings
 from functools import lru_cache
 
 from langfuse import Langfuse, get_client, observe, propagate_attributes  # sole langfuse import point
@@ -33,6 +36,78 @@ def _make_collector_exporter():
     return OTLPSpanExporter(endpoint=f"{endpoint.rstrip('/')}/v1/traces")
 
 
+# Resource attribute the Collector routes on (otel/projects.yaml). See CONTRACT.md §1.
+PROJECT_ATTR = "tl.project"
+PROJECT_ENV = "LANGFUSE_PROJECT"
+_PROJECT_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def get_project() -> "str | None":
+    """Return the Langfuse project slug this process traces into, or None.
+
+    Read from LANGFUSE_PROJECT. The slug must be listed in the platform's
+    otel/projects.yaml; an unknown slug is not an error -- the Collector
+    routes it to the default project -- so a malformed one only warns.
+    One project per process (see docs/MULTI-PROJECT.md for the multi-project
+    provision).
+    """
+    project = os.environ.get(PROJECT_ENV, "").strip()
+    if not project:
+        return None
+    if not _PROJECT_SLUG_RE.match(project):
+        warnings.warn(
+            f"{PROJECT_ENV}={project!r} is not a valid project slug "
+            f"({_PROJECT_SLUG_RE.pattern}); the Collector will route these traces "
+            "to the default project.",
+            stacklevel=2,
+        )
+    return project
+
+
+def _make_project_tracer_provider(project: str, environment: str):
+    """Build and register a global TracerProvider whose Resource carries
+    ``tl.project`` -- the attribute the Collector's routing connector reads.
+
+    Langfuse's own provider exposes no hook for extra resource attributes, so
+    when a project is set we build the provider ourselves, mirroring what
+    Langfuse would set (environment, release, sample rate), and hand it to
+    Langfuse(tracer_provider=...).
+
+    Returns None (and warns) if another library already registered a global
+    TracerProvider: its Resource cannot be changed after the fact. In that case
+    set OTEL_RESOURCE_ATTRIBUTES=tl.project=<slug> before that library starts.
+    """
+    from opentelemetry import trace as otel_trace
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
+
+    if not isinstance(otel_trace.get_tracer_provider(), otel_trace.ProxyTracerProvider):
+        warnings.warn(
+            f"A global OpenTelemetry TracerProvider is already registered, so "
+            f"{PROJECT_ATTR}={project!r} cannot be added to its resource and traces "
+            f"will go to the default project. Set "
+            f"OTEL_RESOURCE_ATTRIBUTES={PROJECT_ATTR}={project} instead.",
+            stacklevel=3,
+        )
+        return None
+
+    attrs = {
+        PROJECT_ATTR: project,
+        "langfuse.environment": environment,      # mirrors Langfuse's own provider
+    }
+    release = os.environ.get("LANGFUSE_RELEASE")
+    if release:
+        attrs["langfuse.release"] = release
+
+    sample_rate = float(os.environ.get("LANGFUSE_SAMPLE_RATE", 1.0))
+    sampler = TraceIdRatioBased(sample_rate) if sample_rate < 1 else None
+
+    provider = TracerProvider(resource=Resource.create(attrs), sampler=sampler)
+    otel_trace.set_tracer_provider(provider)
+    return provider
+
+
 @lru_cache(maxsize=1)
 def get_tracer() -> "Langfuse":
     """Initialise LangFuse + OTel. Idempotent -- safe to call multiple times.
@@ -49,13 +124,24 @@ def get_tracer() -> "Langfuse":
     Trace path (when OTEL_EXPORTER_OTLP_ENDPOINT is unset -- local dev only):
         @trace_agent -> LangFuse directly on LANGFUSE_HOST
         (no PII redaction, no spanmetrics -- acceptable without a Collector)
+
+    Project selection (Collector path): LANGFUSE_PROJECT=<slug> stamps the
+    ``tl.project`` resource attribute and the Collector routes the spans to
+    that Langfuse project; unset/unknown -> the platform's default project.
+    On the direct path the project is whichever one LANGFUSE_PUBLIC_KEY
+    belongs to.
     """
+    environment = os.environ.get("DEPLOY_ENV", "local")
+    project = get_project()
+    tracer_provider = _make_project_tracer_provider(project, environment) if project else None
+
     Langfuse(
         public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
         secret_key=os.environ["LANGFUSE_SECRET_KEY"],
         host=os.environ.get("LANGFUSE_HOST", "http://localhost:3000"),
-        environment=os.environ.get("DEPLOY_ENV", "local"),
+        environment=environment,
         span_exporter=_make_collector_exporter(),
+        tracer_provider=tracer_provider,
     )
 
     from .metrics import init_metrics

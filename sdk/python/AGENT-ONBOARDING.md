@@ -96,14 +96,20 @@ The package pulls in its own dependencies (`langfuse`, `opentelemetry-sdk`,
 
 ## Step 3 — Set environment variables on the agent host
 
-These five variables are the entire configuration. Set them in your `.env`,
+These six variables are the entire configuration. Set them in your `.env`,
 Docker Compose environment block, K8s Secret, or shell — wherever your agent
 picks up its environment.
 
 ```env
 # ── Auth (who you are) ─────────────────────────────────────────────────────
+# Use the API keys of the SAME project you set in LANGFUSE_PROJECT below.
 LANGFUSE_PUBLIC_KEY=pk-lf-local
 LANGFUSE_SECRET_KEY=sk-lf-local
+
+# ── Project (where your traces land) ───────────────────────────────────────
+# Slug of your team's Langfuse project, as listed in the platform's
+# otel/projects.yaml. Unset or unknown → the platform's default project.
+LANGFUSE_PROJECT=agents
 
 # ── Platform location ──────────────────────────────────────────────────────
 # LANGFUSE_HOST   : the LangFuse web UI / API (used for auth handshake only)
@@ -116,6 +122,26 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://<platform-host>:4318
 # Shows as a tag on every trace in LangFuse. Use a short slug.
 DEPLOY_ENV=local              # examples: local  client-acme  aks-prod  teams-bot
 ```
+
+### Which Langfuse project do my traces go to?
+
+On the normal Collector path, **`LANGFUSE_PROJECT` decides**. The Collector reads
+the `tl.project` attribute and forwards spans with that project's credentials.
+Your `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY` do **not** affect where traces land
+there; they are used for REST calls (scores, datasets, prompt management).
+Set both to the same project, or your scores and traces end up in different projects.
+
+| Situation | Where traces land |
+|---|---|
+| `LANGFUSE_PROJECT` set to a slug listed in `otel/projects.yaml` | That project |
+| `LANGFUSE_PROJECT` unset, or a slug the platform doesn't know | The platform's default project |
+| No Collector (`OTEL_EXPORTER_OTLP_ENDPOINT` unset, dev only) | The project your API keys belong to |
+
+New project for your team? Ask the platform owners. The runbook is in
+[`docs/MULTI-PROJECT.md`](../../docs/MULTI-PROJECT.md).
+
+One process traces into **one** project. If you need more, read the
+"Multiple projects in one process" section of that doc first.
 
 ### What to use for `<platform-host>`
 
@@ -158,13 +184,15 @@ atexit.register(shutdown)  # flushes all buffered spans/metrics on process exit
 
 **What `get_tracer()` does in order:**
 
-1. Reads `OTEL_EXPORTER_OTLP_ENDPOINT` — if set, builds an OTLPSpanExporter
+1. Reads `LANGFUSE_PROJECT` — if set, builds the global OTel `TracerProvider`
+   with a `tl.project=<slug>` resource attribute. The Collector routes on it.
+2. Reads `OTEL_EXPORTER_OTLP_ENDPOINT` — if set, builds an OTLPSpanExporter
    pointing at the Collector (`/v1/traces`) and passes it directly to `Langfuse()`.
    LangFuse uses this exporter instead of its default direct-to-LangFuse one,
    so every span travels Agent → Collector → PII redaction → LangFuse.
-2. Calls `Langfuse(span_exporter=..., host=LANGFUSE_HOST)` — initialises LangFuse
+3. Calls `Langfuse(span_exporter=..., host=LANGFUSE_HOST)` — initialises LangFuse
    and sets the global OTel `TracerProvider` with the Collector-bound exporter.
-3. Calls `init_metrics()` — sets up the OTel `MeterProvider` for `record_usage()`
+4. Calls `init_metrics()` — sets up the OTel `MeterProvider` for `record_usage()`
    counters, also pointing at the Collector.
 
 Put this at the top of your entry point (`main.py`, `app.py`, FastAPI lifespan, etc.).
