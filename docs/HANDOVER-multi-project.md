@@ -1,11 +1,10 @@
 # Handover: multi-project Langfuse tracing
 
-Branch: `claude/multi-langfuse-projects-aubda9` (pushed, no PR yet)
-Status: **Phase 1 passed (see §3.0). The live Collector runs this config on the pinned
-image, with `agentic-coding-platform` registered. `pilot-agent` traces reach the default
-project, LiteLLM traces reach `agentic-coding-platform`, and the Grafana Project filter
-works. Open: `agent_name` through a real Collector (needs an app on SDK 0.3.0), lost
-traces, and the org API check.**
+Merged to `main` in PR #1 (`aa80496`).
+Status: **Live. The Collector runs this config on the pinned image, with
+`agentic-coding-platform` registered. `pilot-agent` (SDK 0.3.0) traces reach the default
+project, LiteLLM traces reach `agentic-coding-platform`, and the Grafana Project and Agent
+filters have data. Open: lost exports on the published-port path, and the org API check.**
 Design and runbook: [`docs/MULTI-PROJECT.md`](MULTI-PROJECT.md). This file covers
 what's done, what isn't, and what to do next.
 
@@ -53,15 +52,16 @@ python scripts/gen-collector-config.py --check # OK
 The stack on the dev machine is shared: `pilot-*`, `hrp-*` and `litellm` all send to
 the live Collector. So most checks used temporary containers on other ports. The owner
 then restarted the live Collector on this config at 09:20 UTC. **Its config is bind-mounted
-from this checkout, so any restart of it loads whatever config is checked out.** Switching
-to `main` before this merges would drop the `agentic-coding-platform` route on next restart.
+from this checkout, so any restart of it loads whatever config is checked out.** Keep the
+checkout on an up-to-date `main`: an older commit would drop the `agentic-coding-platform`
+route on the next restart.
 
 | Handover step | Result |
 |---|---|
 | 3.1 `validate` | Pass. No template changes needed; all four syntax assumptions hold on 0.153.0 |
 | 3.2 Default path | Pass with real Langfuse, through a temporary Collector |
-| 3.3 Second project | Pass with real Langfuse through the live Collector, project `agentic-coding-platform` (trace arrived, not in default). Unknown slug → default passes on a temporary Collector. **Default route not yet exercised by a real agent on the live Collector** |
-| 3.3 step 7 cost metric | Name is `agent_cost_usd_total`, no unit added. Grafana view not checked |
+| 3.3 Second project | Pass with real Langfuse through the live Collector, project `agentic-coding-platform` (trace arrived, not in default). Unknown slug → default passes on a temporary Collector. A real `pilot-agent` request reached the default project on the live Collector |
+| 3.3 step 7 cost metric | Name is `agent_cost_usd_total`, no unit added. Grafana view checked |
 | 3.4 Org API | **Not run: needs an org key from the UI** |
 | 3.5 nginx binding | Pass against a sink, 16/16 cases overall including gRPC |
 
@@ -72,21 +72,39 @@ the trace goes to `eka` but the cost metric stays labelled `agents` (the limitat
 
 Client side: the SDK is now **0.3.0** with `langfuse>=4.2.0`, tested at that floor on
 Python 3.11. `AGENT-ONBOARDING.md` covers moving an existing agent and the ingress
-variables. Running apps (`pilot-agent`, `pilot-agent-stable`, `hrp-api`) still have the
-old build, and no real app image has been rebuilt with 0.3.0 yet.
+variables.
 
-Fixed after validation: `@trace_agent` now sets `agent.name` on its root span, so RED
-panels can split by agent. Spans from older SDKs and non-SDK apps keep an empty
-`agent_name`, and the dashboard's Agent "All" still includes them. The Collector image
-is pinned to 0.153.0.
+Client rollout:
+
+| App | Project | How it selects it | SDK | State |
+|---|---|---|---|---|
+| `pilot-agent` | Default | `LANGFUSE_PROJECT` unset | 0.3.0, vendored wheel in `retrieval_systems_platform` (PR #5) | Deployed. A real request shows `agent_name="secp-pilot-advisor"` in Prometheus |
+| `proxy-litellm-1` | `agentic-coding-platform` | `OTEL_RESOURCE_ATTRIBUTES` | None | Live. A real request reached its project and not the default. Nobody uses OpenCode yet, so there's no real traffic |
+| `hrp-*` | Default | `LANGFUSE_PROJECT` unset | 0.2.0 | Gets 0.3.0 at its next build, from the same `vendor/` folder |
+| `pilot-agent-stable` | Default | `LANGFUSE_PROJECT` unset | 0.2.0 | Separate image, unchanged |
+
+`@trace_agent` sets `agent.name` on its root span, so RED panels can split by agent. Spans
+from older SDKs and non-SDK apps keep an empty `agent_name`, and the dashboard's Agent
+"All" still includes them. The Collector image is pinned to 0.153.0.
 
 Found along the way (not caused by this branch, not fixed yet):
 
-- **The SDK sometimes loses a trace on the host → published-port path.** Short-lived
-  processes on Windows failed with "Failed to export spans batch" after about 11s. Rate:
-  3/40 on this config, 4/40 on the pre-branch config, 0/600 for raw requests inside the
-  Docker network. Cause not identified. Long-running agents not measured. A lost export
-  makes `send_test_trace.py` report a false FAIL, so rerun before debugging routing.
+- **Exports sometimes fail on the published-port path, and this can drop part of a trace.**
+  The SDK logs "Failed to export" after about 11s, and that batch is lost.
+  - Short-lived processes on Windows: 3/40 lost on this config, 4/40 on the pre-branch config.
+  - Long-running `pilot-agent`: one failure at 12:03 UTC. That trace is missing its
+    `__start__` and `_route_entry` spans compared with an identical earlier request, so
+    it looks complete at a glance.
+  - Inside the Docker network: 0/600 raw requests failed.
+  - Cause not identified. A failed export makes `send_test_trace.py` report a false FAIL,
+    so rerun before debugging routing. The next thing to try is putting `pilot-agent` on
+    the Collector's Docker network, which is untested.
+- **The Jenkins smoke test can fail a good deploy.** In build 16, every container came up
+  healthy, then `curl` to `host.docker.internal:8010/health` hung for 32s with an empty
+  reply. The request never reached `pilot-agent`. Repeating the check from the Jenkins
+  container gave 119/120 across three services, and the one failure was a 15s hang on
+  Prometheus. This looks like the same path as above, but that's not proven. Adding retries
+  to the smoke `curl` in `retrieval_systems_platform` would stop one hang failing a build.
 - **`send_test_trace.py`'s "Metrics in Prom" check is weak.** It passes on any existing
   series, not this run's. It passed here even though this run's metrics went to a
   Collector that Prometheus doesn't scrape.
@@ -171,8 +189,11 @@ currently send a bearer token; use `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bea
 
 ## 5. After validation
 
-1. Fix anything from §3 (template/generator, then regenerate and rerun tests).
-2. Update the validation table in MULTI-PROJECT.md §6.
-3. Open a PR from `claude/multi-langfuse-projects-aubda9`.
+Done: validation, PR #1 merged, and `pilot-agent` deployed on SDK 0.3.0. Next:
+
+1. Find the cause of the failed exports (§3.0), before starting nginx.
+2. Add nginx in stages: alongside the direct ports first, then move clients one at a time,
+   then close ports 4317/4318.
+3. Check the org API (§3.4), and add larger latency buckets, since P95 tops out at 30s.
 4. Later: `scripts/provision-project.py` using the org API (design in MULTI-PROJECT.md §5.3),
    and multi-project-per-process if a gateway use case appears (§4).

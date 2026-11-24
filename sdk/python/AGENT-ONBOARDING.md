@@ -53,20 +53,20 @@ pip install -e /path/to/agentic-observability-platform/sdk/python
 **Option B — from a Git URL (recommended for agent projects outside the monorepo):**
 
 ```bash
-pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python"
+pip install "agentic-observability-sdk @ git+https://github.com/furqan90/agentic-observability-platform.git#subdirectory=sdk/python"
 ```
 
 **Option C — pin in `requirements.txt` or `pyproject.toml`:**
 
 ```
 # requirements.txt
-agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python
+agentic-observability-sdk @ git+https://github.com/furqan90/agentic-observability-platform.git#subdirectory=sdk/python
 ```
 
 ```toml
 # pyproject.toml
 dependencies = [
-    "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python",
+    "agentic-observability-sdk @ git+https://github.com/furqan90/agentic-observability-platform.git#subdirectory=sdk/python",
 ]
 ```
 
@@ -77,12 +77,26 @@ Use `--force-reinstall`:
 
 ```bash
 pip install --force-reinstall \
-  "agentic-observability-sdk @ git+https://github.com/furqan90/agentic_observability_platform.git#subdirectory=sdk/python"
+  "agentic-observability-sdk @ git+https://github.com/furqan90/agentic-observability-platform.git#subdirectory=sdk/python"
 ```
 
 If the SDK is installed in a Docker image, rebuild the image. An unpinned Git URL
 doesn't change between builds, so Docker can reuse the old layer. Use
 `docker build --no-cache`, or pin the URL to a commit (`...platform.git@<commit>#subdirectory=sdk/python`).
+
+**If your project bundles the SDK as a wheel,** a rebuild reinstalls the same wheel, so
+you have to replace the file first. Build the new one, swap it into your vendor folder,
+and update anything that names the old file:
+
+```bash
+pip wheel --no-deps \
+  "agentic-observability-sdk @ git+https://github.com/furqan90/agentic-observability-platform.git@<commit>#subdirectory=sdk/python" \
+  -w vendor/
+```
+
+Remove the old wheel, because an install using `vendor/*.whl` would otherwise pick up both.
+With `--no-deps`, your project's own pins must also meet the SDK's requirements:
+`langfuse>=4.2.0,<5.0.0` for 0.3.0.
 
 ---
 
