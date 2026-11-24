@@ -123,9 +123,9 @@ services:
       # project from LANGFUSE_INIT_*. Consumed by ${env:LANGFUSE_OTEL_AUTH}.
       LANGFUSE_OTEL_AUTH: ${LANGFUSE_OTEL_AUTH}
     ports:
-      - "4317:4317"   # OTLP gRPC (agents send here)
-      - "4318:4318"   # OTLP HTTP
-      - "8889:8889"   # Prometheus exporter (scraped by Prometheus)
+      - "127.0.0.1:4317:4317"   # OTLP gRPC (agents send here)
+      - "127.0.0.1:4318:4318"   # OTLP HTTP
+      - "127.0.0.1:8889:8889"   # Prometheus exporter (scraped by Prometheus)
 
   prometheus:
     image: prom/prometheus:latest
@@ -134,7 +134,7 @@ services:
       - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=30d"
