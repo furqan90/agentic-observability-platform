@@ -140,11 +140,23 @@ services:
       - "--storage.tsdb.retention.time=30d"
       - "--web.enable-lifecycle"
 
+  # Logs, the third signal (docs/LOGS-PLAN.md). OTLP in at /otlp/v1/logs; Grafana reads it.
+  # Not published: the Collector and Grafana reach it on this network (the dev override publishes it on localhost).
+  # The image has no shell, so no healthcheck: readiness is GET /ready.
+  loki:
+    image: grafana/loki:3.7.10
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ../loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data:/loki
+
   grafana:
     image: grafana/grafana:latest
     restart: unless-stopped
     depends_on:
       - prometheus
+      - loki
     ports:
       - "3001:3000"
     volumes:
@@ -156,6 +168,9 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SERVER_ROOT_URL: "http://localhost:3001"
       GF_SERVER_SERVE_FROM_SUB_PATH: "false"
+      # The Loki data source's "Open in LangFuse" link (provisioning/datasources/loki.yaml)
+      LANGFUSE_PUBLIC_URL: ${LANGFUSE_PUBLIC_URL:-http://localhost:3000}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID}
 
   # ── Infra exporters: the agent↔infra correlation side (see plan §Division of labor) ──
   #
@@ -216,3 +231,4 @@ volumes:
   minio_data:
   prometheus_data:
   grafana_data:
+  loki_data:

@@ -90,6 +90,10 @@ services:
     mem_limit: 512m
     ports: !reset []
 
+  loki:
+    # Pinned in the base file (grafana/loki:3.7.10). Single binary, 64 MB results cache.
+    mem_limit: 512m
+
   grafana:
     image: grafana/grafana:13.0.2
     mem_limit: 384m

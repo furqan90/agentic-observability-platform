@@ -1,0 +1,23 @@
+# Loki (docs/LOGS-PLAN.md §5, phase L0).
+#
+# "Open in LangFuse": the derived field turns a log line's trace_id (structured metadata) into a link to
+# that turn's trace. One LangFuse project per instance (decision L-b), so the URL is built from Grafana's
+# environment: LANGFUSE_PUBLIC_URL and LANGFUSE_INIT_PROJECT_ID (docker-compose.yml passes both).
+# Provisioning expands $VARS; "$$" is a literal "$", so Grafana itself fills ${__value.raw} per line.
+apiVersion: 1
+datasources:
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          url: "$LANGFUSE_PUBLIC_URL/project/$LANGFUSE_INIT_PROJECT_ID/traces/$${__value.raw}"
+          urlDisplayLabel: Open in LangFuse
+          targetBlank: true

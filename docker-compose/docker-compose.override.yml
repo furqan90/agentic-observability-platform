@@ -22,6 +22,10 @@ services:
       - "9002:9000"   # S3 API on host:9002 (host:9000 is taken by ClickHouse native)
       - "9001:9001"   # web console (http://localhost:9001)
 
+  loki:
+    ports:
+      - "127.0.0.1:3100:3100"   # Loki API, for curl / logcli on this PC
+
   # Infra exporter scrape endpoints — handy to curl while wiring dashboards.
   # node-exporter and cadvisor are linux-profile-only; their ports only apply there.
   node-exporter:

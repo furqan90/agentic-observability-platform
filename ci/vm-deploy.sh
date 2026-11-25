@@ -54,10 +54,10 @@ NET=$(envval TELEMETRY_NETWORK); NET=${NET:-telemetry}
 
 step "Copying the config bundle to $OBS_DIR"
 # Replace the config folders whole, so a file deleted in git is deleted there too. Data lives in named volumes.
-tar -cf - docker-compose otel/otel-collector-config.yaml otel/projects.yaml clickhouse prometheus grafana \
-          scripts/send_test_trace.py sdk/python/agentic_observability_sdk \
+tar -cf - docker-compose otel/otel-collector-config.yaml otel/projects.yaml clickhouse prometheus grafana loki \
+          scripts/send_test_trace.py scripts/send_test_log.py sdk/python/agentic_observability_sdk \
     | docker run --rm -i -v "$OBS_DIR:/obs" "$ALPINE" sh -c '
-        cd /obs && rm -rf docker-compose otel clickhouse prometheus grafana scripts sdk && tar -xf - \
+        cd /obs && rm -rf docker-compose otel clickhouse prometheus grafana loki scripts sdk && tar -xf - \
         && find . -path ./.env -prune -o -type d -exec chmod 755 {} + -o -type f -exec chmod 644 {} +'
 docker run --rm -i -v "$OBS_DIR:/obs" "$ALPINE" sh -c 'umask 077 && cat > /obs/.env' < "$ENV_FILE"
 echo "ok"
@@ -101,6 +101,20 @@ if [ "${SKIP_TRACE:-0}" != 1 ]; then
             "langfuse>=4.2.0,<5" "opentelemetry-sdk>=1.25" "opentelemetry-exporter-otlp>=1.25" \
             && cd /w && python scripts/send_test_trace.py' 2>&1 | grep -v '^\s*\.\.\.'
 fi
+
+step "Smoke: Loki"
+ok=0
+for i in $(seq 1 36); do
+    if docker run --rm --network "${OBS_PROJECT}_default" "$CURL" -fsS -m 5 http://loki:3100/ready; then ok=1; break; fi
+    sleep 5
+done
+echo
+[ "$ok" = 1 ] || { echo "Loki wasn't ready within 3 minutes" >&2; exit 1; }
+# One OTLP record straight into Loki, read back with its labels and trace_id; and Grafana's LangFuse link.
+docker run --rm --network "${OBS_PROJECT}_default" -v "$OBS_DIR:/w:ro" \
+    -e LOKI_URL=http://loki:3100 -e GRAFANA_URL=http://grafana:3000 \
+    -e GRAFANA_PASSWORD="$(envval GRAFANA_ADMIN_PASSWORD)" -e DEPLOY_ENV=vm-deploy-smoke \
+    python:3.12-slim python /w/scripts/send_test_log.py --to loki --grafana
 
 step "Memory against the caps"
 docker stats --no-stream --format '{{.Name}}\t{{.MemUsage}}' | grep "^${OBS_PROJECT}-" || true
