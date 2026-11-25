@@ -20,7 +20,7 @@ See ``AGENT-ONBOARDING.md`` for the full walkthrough.
 
 from importlib import import_module
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 # name -> submodule that defines it
 _EXPORTS = {
@@ -30,9 +30,10 @@ _EXPORTS = {
     "get_langchain_handler": "tracer",          # requires: langchain-core
     "get_openai_client": "tracer",              # requires: openai
     "get_anthropic_client": "tracer",           # requires: anthropic
-    # Cross-agent session stitching (see CONTRACT.md §6)
-    "get_propagation_headers": "tracer",
-    "restore_propagation_context": "tracer",
+    # Cross-agent / cross-service context (CONTRACT.md §6; propagation.py: no langfuse)
+    "get_propagation_headers": "propagation",
+    "restore_propagation_context": "propagation",
+    "trace_context": "propagation",
     # Decorators and per-request attributes (decorators.py: imports tracer.py)
     "trace_agent": "decorators",
     "trace_tool": "decorators",

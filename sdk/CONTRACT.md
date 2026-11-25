@@ -124,8 +124,14 @@ Every SDK must expose:
 
 ```
 getPropagationHeaders() → dict          # {"traceparent": "...", "tracestate": "..."}
-restorePropagationContext(headers: dict) → void
+traceContext(headers) → context manager # attach the headers' context for a block, then detach (0.4.1)
+restorePropagationContext(headers) → token | null   # attach only; the caller detaches
 ```
+
+`restorePropagationContext` must **attach** the extracted context (Python SDK ≤ 0.4.0 extracted and discarded
+it, a no-op). Header names are case-insensitive; missing or malformed headers are a no-op, never an error.
+None of these needs LangFuse: a service that only logs (§8) restores its caller's context per request, so its
+log records carry the caller's `trace_id` without creating spans of its own.
 
 The `tl.session_id` attribute provides the LangFuse-level session grouping;
 the `traceparent` provides the OTel-level parent-child link. Both are required.
