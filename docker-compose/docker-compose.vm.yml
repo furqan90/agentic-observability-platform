@@ -1,0 +1,120 @@
+# Pilot VM overlay (docs/PLAN_vm_observability.md). Layered on docker-compose.yml, run on the VM itself:
+#
+#   cd /opt/observability
+#   C="docker compose -p obs -f docker-compose/docker-compose.yml -f docker-compose/docker-compose.vm.yml --env-file .env --profile linux"
+#   $C run --rm minio-init                                      # bucket (starts minio first)
+#   $C up -d --wait $($C config --services | grep -vx minio-init)
+#
+# minio-init is run on its own because "up --wait" counts a one-shot container's exit as a failure
+# (exit 1 even when it exited 0; Compose v5.7.0, checked 2026-11-25).
+#
+# What it changes for the VM:
+#   - memory caps, so the stack can't starve the pilot (api, agent, postgres) on the same 12 GB VM;
+#   - the Linux exporters (profile "linux") instead of the Docker Desktop cadvisor;
+#   - only LangFuse (3000) and Grafana (3001) published; the host forwards them from 172.20.0.46;
+#   - the Collector and LangFuse join the external network "telemetry", which the pilot's agent also joins,
+#     so the agent sends to http://otel-collector:4318 with no published Collector port
+#     (on Linux a container can't reach a port published on the VM's 127.0.0.1 through host-gateway);
+#   - every image pinned (O7): the versions this PC ran on 2026-11-25.
+#
+# The repo's layout is kept under /opt/observability, so the base file's relative bind mounts
+# (../otel, ../clickhouse, ../prometheus, ../grafana, ../.env) resolve unchanged.
+#
+# Variables (from --env-file, defaults are the VM's):
+#   LANGFUSE_PUBLIC_URL  the URL people open LangFuse at (NEXTAUTH_URL)   default http://172.20.0.46:3000
+#   GRAFANA_PUBLIC_URL   Grafana's root URL                                default http://172.20.0.46:3001
+#   LANGFUSE_PORT / GRAFANA_PORT   published ports                         default 3000 / 3001
+#   TELEMETRY_NETWORK    the shared external network                       default telemetry
+
+services:
+  postgres:
+    image: postgres:15
+    mem_limit: 512m
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.10.2.80
+    # ClickHouse reads the cgroup limit and keeps itself to ~90% of it.
+    mem_limit: 3g
+
+  redis:
+    image: redis:7-alpine
+    # noeviction: LangFuse's queues must not be evicted, so the cap has headroom.
+    mem_limit: 256m
+
+  # MinIO no longer publishes free images (minio/minio and minio/mc are gone from Docker Hub, quay.io
+  # needs a login). Chainguard's builds are what LangFuse's own compose uses; their free tier has only
+  # :latest, so they're pinned by digest (pulled 2026-11-25: minio RELEASE.2026-11-23T00-10-37Z).
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:f6243be11aaaa2fe654d260558e2b3fcef50135e78a3abfd0db802b13444f059
+    # The image runs as 65532 and can't write a fresh, root-owned volume; minio/minio ran as root too.
+    user: "0"
+    mem_limit: 512m
+    # The base healthcheck (mc ready local) works: this image ships mc.
+
+  minio-init:
+    image: cgr.dev/chainguard/minio-client@sha256:11aa4baa385a6de421008f72d5019805475f2aa7d74d65d18b92c54986f36016
+    # No shell in this image: call mc directly, the alias given as MC_HOST_local (the keys must be
+    # URL-safe; the VM's generated keys are hex). "mb -p" is a no-op when the bucket exists.
+    entrypoint: ["mc"]
+    command: ["mb", "-p", "local/${LANGFUSE_S3_EVENT_UPLOAD_BUCKET}"]
+    environment:
+      MC_HOST_local: http://${LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID}:${LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY}@minio:9000
+    mem_limit: 128m
+
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3.178.0
+    mem_limit: 768m
+
+  langfuse-web:
+    image: langfuse/langfuse:3.178.0
+    mem_limit: 1280m
+    ports: !override
+      - "${LANGFUSE_PORT:-3000}:3000"
+    environment:
+      NEXTAUTH_URL: ${LANGFUSE_PUBLIC_URL:-http://172.20.0.46:3000}
+      # Next.js binds to $HOSTNAME, which Docker sets to the container id: that resolves to one network
+      # only, so the agent on "telemetry" got no answer (checked 2026-11-25). Bind every interface.
+      HOSTNAME: "0.0.0.0"
+      # O2: accounts are created by the admin (Settings → Members); nobody signs themselves up.
+      AUTH_DISABLE_SIGNUP: "true"
+    networks: [default, telemetry]
+
+  otel-collector:
+    mem_limit: 384m
+    # Not published: the agent reaches it over "telemetry", Prometheus over the default network.
+    ports: !reset []
+    networks: [default, telemetry]
+
+  prometheus:
+    image: prom/prometheus:v3.12.0
+    mem_limit: 512m
+    ports: !reset []
+
+  grafana:
+    image: grafana/grafana:13.0.2
+    mem_limit: 384m
+    ports: !override
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_SERVER_ROOT_URL: ${GRAFANA_PUBLIC_URL:-http://172.20.0.46:3001}
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    mem_limit: 64m
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    mem_limit: 192m
+
+  # Docker Desktop only; the VM uses the "linux" profile's cadvisor + node-exporter.
+  cadvisor-windows:
+    profiles: ["windows"]
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.19.1
+    mem_limit: 64m
+
+networks:
+  telemetry:
+    external: true
+    name: ${TELEMETRY_NETWORK:-telemetry}

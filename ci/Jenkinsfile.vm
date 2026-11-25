@@ -1,0 +1,35 @@
+// Deploys the observability stack to the pilot VM (docs/PLAN_vm_observability.md, V2).
+// Job "observability-vm-deploy": Pipeline from SCM on this repo, script path ci/Jenkinsfile.vm, run by hand.
+//
+// Uses what the pilot's Target stage already has:
+//   - global env var TARGET_DOCKER_HOST (ssh://secp@172.20.0.46:2223);
+//   - credential target-ssh (SSH Username with private key).
+// Plus its own:
+//   - credential observability-vm-env (Secret file: the .env from scripts/gen-vm-env.sh).
+// All the work is in ci/vm-deploy.sh, so a deploy by hand runs the same steps.
+pipeline {
+    agent any
+    options {
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timeout(time: 30, unit: 'MINUTES')
+    }
+    stages {
+        stage('Deploy to the pilot VM') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'target-ssh', keyFileVariable: 'SSH_KEY'),
+                                 file(credentialsId: 'observability-vm-env', variable: 'ENV_FILE')]) {
+                    sh '''
+                        set -e
+                        : "${TARGET_DOCKER_HOST:?TARGET_DOCKER_HOST is not set (Jenkins global env var)}"
+                        # Per-build agent: the docker CLI's ssh picks the key up from it.
+                        eval "$(ssh-agent -s)" > /dev/null
+                        trap 'ssh-agent -k > /dev/null' EXIT
+                        ssh-add -q "$SSH_KEY"
+                        DOCKER_HOST="$TARGET_DOCKER_HOST" bash ci/vm-deploy.sh
+                    '''
+                }
+            }
+        }
+    }
+}
