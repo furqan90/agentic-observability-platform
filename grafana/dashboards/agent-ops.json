@@ -25,6 +25,13 @@
       "tooltip": "Per-trace cost, token usage and eval scores live here, not in Grafana.",
       "type": "link",
       "url": "http://localhost:3000"
+    },
+    {
+      "title": "Agent Logs",
+      "type": "link",
+      "url": "/d/agent-logs",
+      "icon": "doc",
+      "tooltip": "Turns, users, failures and retrieval from the agent's and API's log events (Loki)."
     }
   ],
   "liveNow": false,
@@ -251,6 +258,124 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "row",
+      "id": 901,
+      "title": "Logs (Loki)  — same time axis as the RED panels; details in the Agent Logs dashboard",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 902,
+      "title": "Errors and warnings by service",
+      "description": "Error and warning log lines per 5 minutes, every service that ships logs.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (service_name, detected_level) (count_over_time({service_name=~\".+\"} | detected_level=~\"error|warn\" [$__interval]))",
+          "refId": "A",
+          "legendFormat": "{{service_name}} {{detected_level}}",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
+    },
+    {
+      "type": "timeseries",
+      "id": 903,
+      "title": "Failed turns by stage",
+      "description": "model / retrieval / store / agent (turn.failed). Root causes in Agent Logs → Failures.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (stage) (count_over_time({service_name=\"hrp-pilot-agent\"} |= \"turn.failed\" [$__interval]))",
+          "refId": "A",
+          "legendFormat": "{{stage}}",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 2,
+            "fillOpacity": 80,
+            "spanNulls": true,
+            "showPoints": "auto",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
     }
   ]
 }
