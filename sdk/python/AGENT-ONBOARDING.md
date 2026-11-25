@@ -108,10 +108,13 @@ python -c "from agentic_observability_sdk import get_tracer, trace_agent, trace_
 
 python -c "from importlib.metadata import version; from agentic_observability_sdk import get_project; print(version('agentic-observability-sdk'))"
 # Expected: 0.3.0 or later. An ImportError means the SDK is too old for LANGFUSE_PROJECT.
+# 0.4.0 or later for logs (init_logging) and per-request users (trace_attributes).
 ```
 
 The package pulls in its own dependencies (`langfuse`, `opentelemetry-sdk`,
-`opentelemetry-exporter-otlp`) — no separate installs needed.
+`opentelemetry-exporter-otlp`, and from 0.4.0 `opentelemetry-instrumentation-logging`)
+— no separate installs needed. Installing the wheel with `--no-deps`? Pin those yourself,
+at the versions the SDK was tested with (opentelemetry 1.40.0, instrumentation 0.61b0).
 
 ---
 
@@ -280,6 +283,23 @@ atexit.register(shutdown)  # flushes all buffered spans/metrics on process exit
 Put this at the top of your entry point (`main.py`, `app.py`, FastAPI lifespan, etc.).
 The `atexit` registration is critical for CLI tools or short-lived scripts — without it,
 spans buffered in the `BatchSpanProcessor` may not flush before the process exits.
+
+### 4a+. Ship your logs (SDK 0.4.0)
+
+```python
+import logging
+from agentic_observability_sdk import get_tracer, init_logging
+
+logging.basicConfig(level=logging.INFO)   # your handlers and levels first
+get_tracer()
+init_logging()                            # adds one OTLP handler to the root logger
+```
+
+Your console and file logs don't change. INFO and above also go to the Collector, which redacts
+secrets and emails, drops DEBUG and health-check lines, and stores them in Loki for 30 days. Lines
+written inside a `@trace_agent` call carry that trace's id: in Grafana → Explore → Loki, "Open in
+LangFuse" on a line opens its trace. Log events with fields (`log.info("turn.done", extra={"ms": 412})`),
+never the user's question or the answer: LangFuse already holds those. Details: CONTRACT.md §8.
 
 ### 4b. Wrap agent entry points with `@trace_agent`
 

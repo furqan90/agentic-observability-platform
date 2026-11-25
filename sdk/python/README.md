@@ -51,6 +51,26 @@ def search(q: str) -> str:
     ...
 ```
 
+### Logs and users (SDK 0.4.0)
+
+```python
+import logging
+from agentic_observability_sdk import init_logging, trace_attributes
+
+logging.basicConfig(level=logging.INFO)   # your own setup first: loggers filter before handlers
+init_logging()                            # INFO+ over OTLP -> Collector -> Loki; no-op without an endpoint
+
+log = logging.getLogger(__name__)
+log.info("turn.done", extra={"ms": 412, "sources": 6})   # an event name + fields, never the user's text
+
+with trace_attributes(user_id=browser_id, session_id=thread_id):   # opaque ids only
+    run(question)                                                 # a @trace_agent function
+```
+
+A line written inside a `@trace_agent` span carries its trace id, so Grafana links it to the trace in LangFuse.
+`from agentic_observability_sdk.logs import init_logging` works without `langfuse` installed. See
+[CONTRACT.md §8](../CONTRACT.md).
+
 ### Making LLM calls visible (prompts + responses)
 
 `@trace_agent` records function args/return — not internal LLM calls. Use the
@@ -92,6 +112,7 @@ pip install "agentic-observability-sdk[all]"         # everything
 |---|---|
 | Trace tree, prompts, responses, cost, eval scores | LangFuse `:3000` |
 | Agent rate / error / latency next to infra | Grafana `:3001` |
+| Log lines, linked to their traces | Grafana `:3001` → Explore → Loki |
 | To change the tracing backend | Edit `tracer.py` only |
 
 ---

@@ -41,4 +41,4 @@ Agent code imports only from the SDK facade — never from `langfuse`, `openai`,
 2. Create `sdk/<language>/` as a peer of `sdk/python/`.
 3. Name the package `agentic-observability-sdk-<language>` on the relevant registry.
 4. Write an `AGENT-ONBOARDING.md` following the same structure as the Python one.
-5. Run the checklist in `CONTRACT.md §8` before shipping.
+5. Run the checklist in `CONTRACT.md §9` before shipping.

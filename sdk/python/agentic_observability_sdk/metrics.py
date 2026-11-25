@@ -9,7 +9,9 @@ import os
 
 from opentelemetry import metrics as otel_metrics
 
-from .tracer import PROJECT_ATTR, get_project
+# project.py and resource.py, not tracer.py: this module must import without langfuse (logs use it, CONTRACT §8).
+from .project import PROJECT_ATTR, get_project
+from .resource import build_resource
 
 _metrics_initialised = False
 
@@ -34,19 +36,10 @@ def init_metrics() -> None:
         from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
         from opentelemetry.sdk.metrics import MeterProvider
         from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-        from opentelemetry.sdk.resources import Resource
 
-        attrs = {
-            "service.name": os.environ.get("OTEL_SERVICE_NAME", "agent"),
-            "deployment.environment": os.environ.get("DEPLOY_ENV", "local"),
-        }
-        project = get_project()
-        if project:
-            attrs[PROJECT_ATTR] = project
-        resource = Resource.create(attrs)
         reader = PeriodicExportingMetricReader(OTLPMetricExporter())
         otel_metrics.set_meter_provider(
-            MeterProvider(resource=resource, metric_readers=[reader])
+            MeterProvider(resource=build_resource(), metric_readers=[reader])
         )
         _metrics_initialised = True
     except Exception:

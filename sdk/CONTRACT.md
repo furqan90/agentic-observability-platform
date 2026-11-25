@@ -44,6 +44,8 @@ conventions — snake_case for Python, camelCase for TypeScript, etc.):
 | `getLangchainHandler()` | Return a LangFuse callback handler for LangChain/LangGraph. |
 | `getOpenaiClient(**kwargs)` | Return a LangFuse-instrumented OpenAI client. |
 | `getAnthropicClient(**kwargs)` | Return an auto-instrumented Anthropic client. |
+| `traceAttributes(userId?, sessionId?)` | Per-request context: every span of the trace started inside it carries the user and session (§8.3). |
+| `initLogging(level?)` | Ship the process's log records over OTLP (§8). Usable without LangFuse installed. |
 
 **Enforcement rule:** Agent code imports only from the SDK facade. Direct
 imports of `langfuse`, `openai`, `anthropic`, or OTel primitives outside the
@@ -141,6 +143,10 @@ the `traceparent` provides the OTel-level parent-child link. Both are required.
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | ✅ | OTel Collector HTTP endpoint (`:4318`) |
 | `DEPLOY_ENV` | ✅ | `prod` \| `staging` \| `dev` |
 | `OTEL_SERVICE_NAME` | optional | Overrides `service.name` resource attribute |
+| `OTEL_LOG_LEVEL` | optional | Lowest level `initLogging()` ships (default `INFO`; the Collector drops DEBUG anyway) |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | optional | Full logs URL, when logs go elsewhere than `<OTEL_EXPORTER_OTLP_ENDPOINT>/v1/logs` |
+| `HOST_NAME` | optional | `host.name` resource attribute (Loki label `host_name`). In a container, set it to the machine's name |
+| `SERVICE_VERSION` / `APP_VERSION` | optional | `service.version` resource attribute |
 
 **Project routing:** on the Collector path, the `tl.project` **resource** attribute
 alone picks the LangFuse project. Credentials never leave the platform. When
@@ -156,12 +162,74 @@ directly at LangFuse bypasses PII redaction and spanmetrics.
 
 ---
 
-## 8. Language SDK Checklist
+## 8. Logs (SDK 0.4.0)
+
+Logs are the third signal, on the same OTLP interface as traces and metrics: the SDK sends log records to
+`<OTEL_EXPORTER_OTLP_ENDPOINT>/v1/logs`; the Collector redacts, filters and exports them to Loki.
+
+### 8.1 One Resource for all three signals
+
+Traces, metrics and logs are built with the same Resource, so a log line, its span and that turn's counters
+line up:
+
+| Attribute | From | Loki label |
+|---|---|---|
+| `service.name` | `OTEL_SERVICE_NAME` (default `agent`) | `service_name` |
+| `deployment.environment` | `DEPLOY_ENV` (default `local`) | `deployment_environment` |
+| `tl.project` | `LANGFUSE_PROJECT` | `tl_project` |
+| `host.name` | `HOST_NAME`, else the host name | `host_name` |
+| `service.instance.id` | the host name (a container id in Docker) | — |
+| `service.version` | `SERVICE_VERSION` / `APP_VERSION` | — |
+
+Only those four become Loki labels. Everything else is structured metadata: queryable, not indexed.
+**Never** make trace, thread, page or user ids labels: unbounded values blow up the index.
+
+### 8.2 `initLogging()`
+
+- **One handler on the root logger,** at `OTEL_LOG_LEVEL` (default INFO), next to the service's own console
+  and file handlers. The local files stay the full record.
+- **Loggers filter first:** `initLogging()` changes no logger's level. Set the service's levels before calling
+  it.
+- **A no-op without an endpoint; idempotent; never raises.** A setup failure leaves the service on local logs.
+- **Never blocks the caller:** a background batch (queue 2048). When the queue is full or the Collector is down,
+  records are dropped and counted: `agent_log_records_dropped_total{reason="queue_full"|"export_failed",
+  tl_project}`.
+- **What a record carries:**
+  - the `trace_id` / `span_id` of the active span (the ids LangFuse shows);
+  - `severity_number` / `severity_text`;
+  - the message as `body`;
+  - `code.*`;
+  - an exception as **one** record with `exception.type`, `exception.message` and `exception.stacktrace`;
+  - every `extra={...}` field as an attribute.
+- **Loop guard:** records from the export path (`opentelemetry.*`, `urllib3.connectionpool`) never enter the
+  queue.
+- **`shutdown()` flushes the logs too.** `logging.basicConfig(force=True)` after `initLogging()` removes the
+  handler; `shutdown()` warns when that happened.
+- **Importable without LangFuse:** `from agentic_observability_sdk.logs import init_logging` needs only the
+  `opentelemetry-*` packages.
+- **Write events, not prose:** a short event name as the message, the values as `extra` fields (so LogQL can
+  filter `| ms > 20000`). Never log a user's question, an answer, retrieved text, keys or emails: LangFuse
+  holds the conversation, and the Collector redacts what slips through.
+
+### 8.3 Users and sessions
+
+`traceAttributes(userId, sessionId)` wraps one request:
+- **`userId` becomes LangFuse's user.** It must be an opaque id: a hash or a random per-browser id, never a
+  name or an email.
+- **`sessionId` groups a conversation's turns.**
+- **Nesting:** an inner `traceAgent` without a `userId` keeps the outer value.
+
+---
+
+## 9. Language SDK Checklist
 
 Before shipping a new language SDK, verify:
 
 - [ ] All required metadata envelope attributes stamped on every root trace
 - [ ] `tl.project` stamped on the OTel trace + metric **resource** when `LANGFUSE_PROJECT` is set
+- [ ] Traces, metrics and logs share one Resource (§8.1)
+- [ ] `initLogging()`: non-blocking, drop counter, loop guard, flushed by `shutdown()`, importable without LangFuse (§8.2)
+- [ ] `traceAttributes()` reaches every span of the trace, and survives a nested `traceAgent` (§8.3)
 - [ ] All required public API functions implemented
 - [ ] Span naming follows §3 conventions
 - [ ] OTel attribute names match §4 exactly

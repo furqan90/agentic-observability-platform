@@ -7,11 +7,14 @@ If we ever leave LangFuse, we rewrite this one file -- not N agents.
 """
 
 import os
-import re
 import warnings
 from functools import lru_cache
 
 from langfuse import Langfuse, get_client, observe, propagate_attributes  # sole langfuse import point
+
+# The project lookup lives in project.py (no langfuse import), re-exported here for existing callers.
+from .project import PROJECT_ATTR, PROJECT_ENV, get_project  # noqa: F401
+from .resource import build_resource
 
 
 def _make_collector_exporter():
@@ -36,34 +39,6 @@ def _make_collector_exporter():
     return OTLPSpanExporter(endpoint=f"{endpoint.rstrip('/')}/v1/traces")
 
 
-# Resource attribute the Collector routes on (otel/projects.yaml). See CONTRACT.md §1.
-PROJECT_ATTR = "tl.project"
-PROJECT_ENV = "LANGFUSE_PROJECT"
-_PROJECT_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
-
-
-def get_project() -> "str | None":
-    """Return the Langfuse project slug this process traces into, or None.
-
-    Read from LANGFUSE_PROJECT. The slug must be listed in the platform's
-    otel/projects.yaml; an unknown slug is not an error -- the Collector
-    routes it to the default project -- so a malformed one only warns.
-    One project per process (see docs/MULTI-PROJECT.md for the multi-project
-    provision).
-    """
-    project = os.environ.get(PROJECT_ENV, "").strip()
-    if not project:
-        return None
-    if not _PROJECT_SLUG_RE.match(project):
-        warnings.warn(
-            f"{PROJECT_ENV}={project!r} is not a valid project slug "
-            f"({_PROJECT_SLUG_RE.pattern}); the Collector will route these traces "
-            "to the default project.",
-            stacklevel=2,
-        )
-    return project
-
-
 def _make_project_tracer_provider(project: str, environment: str):
     """Build and register a global TracerProvider whose Resource carries
     ``tl.project`` -- the attribute the Collector's routing connector reads.
@@ -78,7 +53,6 @@ def _make_project_tracer_provider(project: str, environment: str):
     set OTEL_RESOURCE_ATTRIBUTES=tl.project=<slug> before that library starts.
     """
     from opentelemetry import trace as otel_trace
-    from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
 
@@ -92,6 +66,8 @@ def _make_project_tracer_provider(project: str, environment: str):
         )
         return None
 
+    # The shared Resource (service.name, host.name, tl.project, ...: resource.py), the same one logs and
+    # metrics use, plus what Langfuse's own provider would set.
     attrs = {
         PROJECT_ATTR: project,
         "langfuse.environment": environment,      # mirrors Langfuse's own provider
@@ -103,7 +79,7 @@ def _make_project_tracer_provider(project: str, environment: str):
     sample_rate = float(os.environ.get("LANGFUSE_SAMPLE_RATE", 1.0))
     sampler = TraceIdRatioBased(sample_rate) if sample_rate < 1 else None
 
-    provider = TracerProvider(resource=Resource.create(attrs), sampler=sampler)
+    provider = TracerProvider(resource=build_resource(attrs), sampler=sampler)
     otel_trace.set_tracer_provider(provider)
     return provider
 
@@ -171,6 +147,13 @@ def shutdown() -> None:
         provider = otel_trace.get_tracer_provider()
         if hasattr(provider, "shutdown"):
             provider.shutdown()
+    except Exception:
+        pass
+
+    # Flush + shut down the log pipeline (init_logging), so the last lines before exit are sent
+    try:
+        from .logs import shutdown_logging
+        shutdown_logging()
     except Exception:
         pass
 
