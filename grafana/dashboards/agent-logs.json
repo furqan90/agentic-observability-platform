@@ -1,0 +1,1294 @@
+{
+  "uid": "agent-logs",
+  "title": "Agent Logs",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": [
+    "logs",
+    "agents",
+    "loki"
+  ],
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "description": "The pilot's turns from its log events (agent and retrieval API): usage, outcomes, failures, retrieval, one turn end to end, and the log pipeline's health. LangFuse holds the conversations; every line links to its turn there.",
+  "links": [
+    {
+      "title": "Agent Ops",
+      "type": "link",
+      "url": "/d/agent-ops",
+      "icon": "dashboard"
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "env",
+        "label": "Environment",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "query": "label_values(deployment_environment)",
+        "definition": "label_values(deployment_environment)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "project",
+        "label": "Project",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "query": "label_values(tl_project)",
+        "definition": "label_values(tl_project)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "trace_id",
+        "label": "Trace id",
+        "type": "textbox",
+        "query": "-",
+        "current": {
+          "text": "-",
+          "value": "-"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "id": 1,
+      "title": "Usage  (turns from the agent's turn events; users = distinct anonymous devices until sign-in)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "stat",
+      "id": 2,
+      "title": "Turns",
+      "description": "Questions asked in the time range (turn.start).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.start\" [$__range]))",
+          "refId": "A",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 3,
+      "title": "Users",
+      "description": "Distinct devices (browsers) that asked in the time range: the anonymous device_id the search page keeps. Until sign-in exists, one browser = one user.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count(sum by (device_id) (count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.start\" | device_id != \"\" [$__range])))",
+          "refId": "A",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 4,
+      "title": "Failed turns",
+      "description": "Share of turns that ended in an error (turn.failed).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "(sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.failed\" [$__range])) or vector(0)) / sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.start\" [$__range]))",
+          "refId": "A",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 5,
+      "title": "Turn time p95",
+      "description": "95th percentile of a turn's time, question to answer (turn.done ms).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.95, {service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" | unwrap ms [$__range]) by (service_name)",
+          "refId": "A",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 6,
+      "title": "Model cost",
+      "description": "Model spend in the time range (turn.done cost_usd; the same totals as the Agent Ops cost panel).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" | unwrap cost_usd [$__range]))",
+          "refId": "A",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 7,
+      "title": "Searches per turn",
+      "description": "Knowledge-base searches the agent ran per question (retrieval.done / turn.start).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"retrieval.done\" [$__range])) / sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.start\" [$__range]))",
+          "refId": "A",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 8,
+      "title": "Users (last 24 h, rolling)",
+      "description": "Distinct devices that asked in the 24 hours before each point.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count(sum by (device_id) (count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.start\" | device_id != \"\" [1d])))",
+          "refId": "A",
+          "legendFormat": "devices in the 24 h before each point",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
+    },
+    {
+      "type": "bargauge",
+      "id": 9,
+      "title": "Turns per device (top 10)",
+      "description": "Questions per anonymous device in the time range. The ids are random per browser: no names.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "topk(10, sum by (device_id) (count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.start\" | device_id != \"\" [$__range])))",
+          "refId": "A",
+          "legendFormat": "{{device_id}}",
+          "queryType": "instant"
+        }
+      ],
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "row",
+      "id": 10,
+      "title": "Outcomes and answer quality",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 11,
+      "title": "Turns by outcome",
+      "description": "turn.done / turn.uncited (sources retrieved, none cited) / turn.failed, per 5 minutes.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" [$__interval]))",
+          "refId": "A",
+          "legendFormat": "answered",
+          "queryType": "range"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "(sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.uncited\" [$__interval])) or vector(0))",
+          "refId": "B",
+          "legendFormat": "answered, nothing cited",
+          "queryType": "range"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "(sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.failed\" [$__interval])) or vector(0))",
+          "refId": "C",
+          "legendFormat": "failed",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
+    },
+    {
+      "type": "timeseries",
+      "id": 12,
+      "title": "Turn time",
+      "description": "Question to answer (turn.done ms).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.5, {service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" | unwrap ms [$__interval]) by (service_name)",
+          "refId": "A",
+          "legendFormat": "p50",
+          "queryType": "range"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.95, {service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" | unwrap ms [$__interval]) by (service_name)",
+          "refId": "B",
+          "legendFormat": "p95",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "showPoints": "auto"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
+    },
+    {
+      "type": "timeseries",
+      "id": 13,
+      "title": "Answer quality (share of answered turns)",
+      "description": "What went wrong with answers that did arrive. No sources: an index gap or a question outside it.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "(sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" | sources = 0 [$__interval])) or vector(0)) / sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" [$__interval]))",
+          "refId": "A",
+          "legendFormat": "no sources found",
+          "queryType": "range"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "(sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.uncited\" [$__interval])) or vector(0)) / sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" [$__interval]))",
+          "refId": "B",
+          "legendFormat": "sources, none cited",
+          "queryType": "range"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "(sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" | truncated = \"true\" [$__interval])) or vector(0)) / sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" [$__interval]))",
+          "refId": "C",
+          "legendFormat": "cut off at the length limit",
+          "queryType": "range"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "(sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" | empty_answer = \"true\" [$__interval])) or vector(0)) / sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" [$__interval]))",
+          "refId": "D",
+          "legendFormat": "empty answer",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "showPoints": "auto"
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
+    },
+    {
+      "type": "timeseries",
+      "id": 14,
+      "title": "Tokens and cost",
+      "description": "Per 5 minutes, from turn.done.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" | unwrap input_tokens [$__interval]))",
+          "refId": "A",
+          "legendFormat": "input tokens",
+          "queryType": "range"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" | unwrap output_tokens [$__interval]))",
+          "refId": "B",
+          "legendFormat": "output tokens",
+          "queryType": "range"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(sum_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.done\" | unwrap cost_usd [$__interval]))",
+          "refId": "C",
+          "legendFormat": "cost (USD)",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 2,
+            "fillOpacity": 60,
+            "spanNulls": true,
+            "showPoints": "auto"
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cost (USD)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
+    },
+    {
+      "type": "row",
+      "id": 15,
+      "title": "Failures",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 16,
+      "title": "Failed turns by stage",
+      "description": "Where turns failed: model (the LLM provider), retrieval (the retrieval API), store (the conversation database), agent (anything else).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (stage) (count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.failed\" [$__interval]))",
+          "refId": "A",
+          "legendFormat": "{{stage}}",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 2,
+            "fillOpacity": 80,
+            "spanNulls": true,
+            "showPoints": "auto",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
+    },
+    {
+      "type": "table",
+      "id": 17,
+      "title": "Root causes",
+      "description": "The innermost exception of each failed turn (e.g. httpx.ConnectError = the retrieval API unreachable; openai.APIConnectionError = the model host unreachable).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "topk(10, sum by (stage, error_type, http_status) (count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"turn.failed\" [$__range])))",
+          "refId": "A",
+          "legendFormat": "",
+          "queryType": "instant"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "turns"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "logs",
+      "id": 18,
+      "title": "Recent errors and warnings (expand a line: stack trace, fields, Open in LangFuse)",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{service_name=~\"hrp-pilot-agent|pilot-api\", deployment_environment=~\"$env\", tl_project=~\"$project\"} | detected_level=~\"error|warn\"",
+          "refId": "A",
+          "legendFormat": "",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false
+      }
+    },
+    {
+      "type": "row",
+      "id": 19,
+      "title": "Retrieval",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 20,
+      "title": "Search time p95: agent's view vs the API's",
+      "description": "hrp-pilot-agent: the call as the agent saw it (retrieval.done). pilot-api: the search itself (retrieve.ranked). The gap is network and serialisation.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.95, {service_name=~\"hrp-pilot-agent|pilot-api\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |~ \"retrieval.done|retrieve.ranked\" | unwrap ms [$__interval]) by (service_name)",
+          "refId": "A",
+          "legendFormat": "{{service_name}}",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 49
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "showPoints": "auto"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
+    },
+    {
+      "type": "timeseries",
+      "id": 21,
+      "title": "Searches",
+      "description": "Agent searches per 5 minutes (retrieval.done).",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"retrieval.done\" [$__interval]))",
+          "refId": "A",
+          "legendFormat": "searches",
+          "queryType": "range"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "(sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"retrieval.done\" | results = 0 [$__interval])) or vector(0))",
+          "refId": "B",
+          "legendFormat": "returned nothing",
+          "queryType": "range"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "(sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"retrieval.done\" | overrides != \"\" [$__interval])) or vector(0))",
+          "refId": "C",
+          "legendFormat": "with setting overrides",
+          "queryType": "range"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "(sum(count_over_time({service_name=\"hrp-pilot-agent\", deployment_environment=~\"$env\", tl_project=~\"$project\"} |= \"retrieval.done\" | filtered = \"true\" [$__interval])) or vector(0))",
+          "refId": "D",
+          "legendFormat": "with a tag filter",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 49
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
+    },
+    {
+      "type": "row",
+      "id": 22,
+      "title": "One turn, end to end  (paste a trace id in the 'Trace id' box at the top)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      }
+    },
+    {
+      "type": "logs",
+      "id": 23,
+      "title": "Every line of the turn, agent and API",
+      "description": "turn.start, each search on both sides, then turn.done or turn.failed. A trace id comes from LangFuse, or from any line's fields here.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{service_name=~\"hrp-pilot-agent|pilot-api\"} | trace_id = \"$trace_id\"",
+          "refId": "A",
+          "legendFormat": "",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 58
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Ascending",
+        "dedupStrategy": "none",
+        "prettifyLogMessage": false
+      }
+    },
+    {
+      "type": "row",
+      "id": 24,
+      "title": "Is the log pipeline healthy?",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 68
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 25,
+      "title": "Log lines by service and level",
+      "description": "Everything that reached Loki, per 5 minutes.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (service_name, detected_level) (count_over_time({service_name=~\".+\", deployment_environment=~\"$env\"} [$__interval]))",
+          "refId": "A",
+          "legendFormat": "{{service_name}} {{detected_level}}",
+          "queryType": "range"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 69
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
+    },
+    {
+      "type": "timeseries",
+      "id": 26,
+      "title": "Lost or delayed log records",
+      "description": "A queue that stays up means Loki is down or slow (records wait on disk, nothing lost yet). Failed sends or SDK drops above 0 mean lines are being lost.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(otelcol_receiver_accepted_log_records[5m]))",
+          "refId": "A",
+          "legendFormat": "accepted by the Collector /s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(otelcol_exporter_sent_log_records[5m]))",
+          "refId": "B",
+          "legendFormat": "sent to Loki /s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(otelcol_exporter_queue_size{exporter=~\".*loki.*\"}) or vector(0)",
+          "refId": "C",
+          "legendFormat": "waiting in the Collector's queue"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(otelcol_exporter_send_failed_log_records[5m])) or vector(0)",
+          "refId": "D",
+          "legendFormat": "failed sends to Loki /s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(agent_log_records_dropped_total[5m])) or vector(0)",
+          "refId": "E",
+          "legendFormat": "dropped by the SDK (per 5 min)"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 69
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "showPoints": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "interval": "5m"
+    }
+  ]
+}
