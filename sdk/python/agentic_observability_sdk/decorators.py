@@ -68,6 +68,23 @@ def trace_agent(name: str, tags: list[str] | None = None, user_id: str | None = 
     return decorator
 
 
+def trace_attributes(*, user_id: str | None = None, session_id: str | None = None):
+    """Context manager: who is asking (user_id) and which conversation (session_id), per request.
+
+    ``@trace_agent(user_id=...)`` is fixed when the function is defined; this sets them for one call.
+    Wrap the call to your ``@trace_agent`` function, and every span of that trace carries them, so
+    LangFuse's Users view counts users and its Sessions view groups a conversation's turns:
+
+        with trace_attributes(user_id=client_id, session_id=thread_id):
+            answer = chat_turn(question)        # a @trace_agent function
+
+    An inner ``@trace_agent`` with no user_id keeps the outer value. None leaves an attribute unset.
+    LangFuse drops values over 200 characters (with a warning), so pass an opaque id, never a name or
+    an email: they would end up in every trace.
+    """
+    return _propagate_attributes(user_id=user_id, session_id=session_id)
+
+
 def trace_tool(name: str):
     """Decorator that creates a child span inside the current trace.
 
