@@ -109,9 +109,14 @@ services:
     image: otel/opentelemetry-collector-contrib:0.153.0
     restart: unless-stopped
     depends_on:
-      - langfuse-web
+      langfuse-web:
+        condition: service_started
+      otel-queue-init:
+        condition: service_completed_successfully
     volumes:
       - ../otel/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+      # The logs exporter's persistent queue (file_storage/queue): survives restarts and Loki outages.
+      - otel_queue:/var/lib/otelcol/queue
     # Per-project Langfuse OTLP auth (LANGFUSE_OTEL_AUTH_<SLUG>) for every
     # non-default project in otel/projects.yaml. Optional: absent = default only.
     # List what is needed: python scripts/gen-collector-config.py --list-env
@@ -139,6 +144,14 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=30d"
       - "--web.enable-lifecycle"
+
+  # One-shot: a fresh named volume is root-owned, and the Collector runs as 10001 (no writable directory in
+  # its image). Started as the Collector's dependency; deploys leave *-init services out of "up --wait".
+  otel-queue-init:
+    image: alpine:3.20
+    command: ["chown", "-R", "10001:10001", "/var/lib/otelcol/queue"]
+    volumes:
+      - otel_queue:/var/lib/otelcol/queue
 
   # Logs, the third signal (docs/LOGS-PLAN.md). OTLP in at /otlp/v1/logs; Grafana reads it.
   # Not published: the Collector and Grafana reach it on this network (the dev override publishes it on localhost).
@@ -232,3 +245,4 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  otel_queue:

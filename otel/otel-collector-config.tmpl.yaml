@@ -12,10 +12,21 @@
 #   The `tl.project` resource attribute picks the project; missing/unknown
 #   values go to the default project (otel/projects.yaml: default_project).
 #
+# Logs (docs/LOGS-PLAN.md §3):
+#   logs/in ──► memory_limiter ─► project_from_ingress ─► attributes/redaction ─► transform/log_redaction
+#               ─► filter/log_noise ─► resource ─► batch ─► otlp_http/loki (persistent queue on disk)
+#
 # Metric naming (Collector v0.153.0+):
 #   calls_total  →  traces_span_metrics_calls_total
 #   duration_milliseconds  →  traces_span_metrics_duration_milliseconds
 @@GENERATED_NOTICE@@
+extensions:
+  # Persistent export queue for logs: a Loki restart or outage holds records here (a named volume, made
+  # writable for the Collector's user 10001 by otel-queue-init) and resends them.
+  file_storage/queue:
+    directory: /var/lib/otelcol/queue
+    timeout: 1s
+
 receivers:
   otlp:
     protocols:
@@ -41,6 +52,12 @@ connectors:
 @@ROUTING_CONNECTOR@@
 
 processors:
+  # First in every receiving pipeline: a burst (a crash loop's logs) must not take the Collector down,
+  # and with it traces and metrics. Percentages of the container's memory limit.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
   batch: {}
   resource:
     attributes:
@@ -59,6 +76,27 @@ processors:
       - { key: user.email, action: delete }
       - { key: user.ip, action: delete }
       - { key: client.ssn, action: delete }
+  # Logs only: log text is free-form, so secrets that slipped into a message are rewritten in the body.
+  # "$$" is a literal "$" (config expansion), so "$$1" is the regex's first group.
+  transform/log_redaction:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - 'replace_pattern(body, "sk-[A-Za-z0-9_-]{16,}", "sk-<redacted>")'
+          # "Authorization: Bearer <token>" first, scheme included: a pattern that stopped at the scheme
+          # redacted the word "Bearer" and left the token (caught by send_test_log.py --checks).
+          - 'replace_pattern(body, "(?i)(authorization:\\s*(?:bearer\\s+|basic\\s+)?)[A-Za-z0-9._~+/=-]+", "$$1<redacted>")'
+          - 'replace_pattern(body, "(?i)\\b(bearer|basic)\\s+[A-Za-z0-9._~+/=-]+", "$$1 <redacted>")'
+          - 'replace_pattern(body, "(?i)(api[_-]?key|token|password|secret)=[^\\s&]+", "$$1=<redacted>")'
+          - 'replace_pattern(body, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "<email>")'
+  # Logs only: DEBUG never leaves the machine (D2; records with no severity are kept), nor health checks.
+  filter/log_noise:
+    error_mode: ignore
+    logs:
+      log_record:
+        - 'severity_number > SEVERITY_NUMBER_UNSPECIFIED and severity_number < SEVERITY_NUMBER_INFO'
+        - 'IsMatch(body, "GET /health.* 200")'
 
 exporters:
   # Traces → LangFuse via its native OTLP endpoint, one exporter per project.
@@ -71,17 +109,48 @@ exporters:
     endpoint: 0.0.0.0:8889
     enable_open_metrics: true
 
+  # Logs → Loki's native OTLP endpoint (the exporter appends /v1/logs). Queue on disk, retried for 30 min.
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
+    sending_queue:
+      enabled: true
+      storage: file_storage/queue
+      queue_size: 5000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 30m
+
 service:
+  extensions: [file_storage/queue]
+  telemetry:
+    # The Collector's own metrics (queue size, failed and refused records) for Prometheus on :8888.
+    # The default listens on localhost only, which Prometheus can't reach.
+    metrics:
+      level: normal
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
   pipelines:
     traces/in:
       receivers: [otlp]
       # project_from_ingress must run before batch: batch drops request metadata.
-      processors: [resource/project_from_ingress, attributes/redaction, resource, batch]
+      processors: [memory_limiter, resource/project_from_ingress, attributes/redaction, resource, batch]
       exporters: [routing/langfuse_projects, span_metrics]
 @@PROJECT_PIPELINES@@
     metrics:
       # otlp: accepts push metrics from SDK (token/cost counters via OTLP /v1/metrics)
       # span_metrics: receives RED metrics generated from the traces pipeline above
       receivers: [otlp, span_metrics]
-      processors: [batch]
+      processors: [memory_limiter, batch]
       exporters: [prometheus]
+    logs/in:
+      receivers: [otlp]
+      # project_from_ingress before batch, as in traces/in: batch drops request metadata.
+      processors: [memory_limiter, resource/project_from_ingress, attributes/redaction, transform/log_redaction,
+                   filter/log_noise, resource, batch]
+      exporters: [otlp_http/loki]
