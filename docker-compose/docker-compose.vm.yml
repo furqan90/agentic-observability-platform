@@ -80,7 +80,8 @@ services:
     networks: [default, telemetry]
 
   otel-collector:
-    mem_limit: 384m
+    # 512 MB since logs (L1): its memory_limiter keeps it to ~80% of this.
+    mem_limit: 512m
     # Not published: the agent reaches it over "telemetry", Prometheus over the default network.
     ports: !reset []
     networks: [default, telemetry]
@@ -93,6 +94,9 @@ services:
   loki:
     # Pinned in the base file (grafana/loki:3.7.10). Single binary, 64 MB results cache.
     mem_limit: 512m
+
+  otel-queue-init:
+    mem_limit: 32m
 
   grafana:
     image: grafana/grafana:13.0.2

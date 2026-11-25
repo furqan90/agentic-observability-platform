@@ -30,6 +30,8 @@ ALPINE=alpine:3.20
 CURL=curlimages/curl:8.10.1
 
 envval() { grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true; }
+TRACE_OUT=$(mktemp)
+trap 'rm -f "$TRACE_OUT"' EXIT
 step() { echo; echo "== $*"; }
 
 step "Target"
@@ -78,8 +80,38 @@ step "Bucket (minio-init, run alone: 'up --wait' counts its exit as a failure)"
 compose run --rm minio-init
 
 step "Up"
-services=$(compose config --services | grep -vx minio-init | tr '\n' ' ')
+# One-shot *-init services are left out: "up --wait" counts a listed one-shot's exit as a failure. A
+# dependency (otel-queue-init, under the Collector) is still started and waited for by its dependant.
+services=$(compose config --services | grep -v -- '-init$' | tr '\n' ' ')
 compose up -d --wait --wait-timeout 600 $services
+
+step "Reload services whose config files changed"
+# Compose recreates a container only when its compose definition changes, not when a bind-mounted file does:
+# without this, a new prometheus.yml or Collector config would sit on disk while the old one keeps running.
+# One hash per service over the files it mounts; restart where it differs from the last deploy's (all of
+# them on the first deploy with this step, when there's no record yet).
+dirhash() { find "$@" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-64; }
+new_hashes=$(printf '%s %s\n' \
+    otel-collector "$(dirhash otel/otel-collector-config.yaml)" \
+    prometheus     "$(dirhash prometheus)" \
+    loki           "$(dirhash loki)" \
+    grafana        "$(dirhash grafana)" \
+    clickhouse     "$(dirhash clickhouse)")
+old_hashes=$(docker run --rm -v "$OBS_DIR:/obs:ro" "$ALPINE" cat /obs/.config-hashes 2>/dev/null || true)
+changed=""
+while read -r svc h; do
+    printf '%s\n' "$old_hashes" | grep -qx "$svc $h" || changed="$changed $svc"
+done <<EOF
+$new_hashes
+EOF
+if [ -n "$changed" ]; then
+    echo "restarting:$changed"
+    compose restart $changed
+    compose up -d --wait --wait-timeout 300 $changed
+else
+    echo "none changed"
+fi
+printf '%s\n' "$new_hashes" | docker run --rm -i -v "$OBS_DIR:/obs" "$ALPINE" sh -c 'cat > /obs/.config-hashes'
 
 step "Smoke: LangFuse over $NET"
 ok=0
@@ -99,7 +131,11 @@ if [ "${SKIP_TRACE:-0}" != 1 ]; then
         -e PROMETHEUS_URL=http://prometheus:9090 -e DEPLOY_ENV=vm-deploy-smoke -e OTEL_SERVICE_NAME=vm-deploy-smoke \
         python:3.12-slim sh -c 'pip install -q --root-user-action=ignore --disable-pip-version-check \
             "langfuse>=4.2.0,<5" "opentelemetry-sdk>=1.25" "opentelemetry-exporter-otlp>=1.25" \
-            && cd /w && python scripts/send_test_trace.py' 2>&1 | grep -v '^\s*\.\.\.'
+            && cd /w && python scripts/send_test_trace.py' > "$TRACE_OUT" 2>&1 || trace_rc=$?
+    grep -v '^\s*\.\.\.' "$TRACE_OUT" || true
+    [ "${trace_rc:-0}" = 0 ] || exit "$trace_rc"
+    # The trace's id, so the log smoke's "Open in LangFuse" link opens a real trace.
+    SMOKE_TRACE_ID=$(grep -m1 -oE 'id +: [0-9a-f]{32}' "$TRACE_OUT" | grep -oE '[0-9a-f]{32}' || true)
 fi
 
 step "Smoke: Loki"
@@ -110,11 +146,13 @@ for i in $(seq 1 36); do
 done
 echo
 [ "$ok" = 1 ] || { echo "Loki wasn't ready within 3 minutes" >&2; exit 1; }
-# One OTLP record straight into Loki, read back with its labels and trace_id; and Grafana's LangFuse link.
+# OTLP records through the Collector's logs pipeline into Loki, read back: labels and trace_id, redaction,
+# DEBUG and health lines dropped; and Grafana's LangFuse link (opening the trace smoke's real trace).
 docker run --rm --network "${OBS_PROJECT}_default" -v "$OBS_DIR:/w:ro" \
-    -e LOKI_URL=http://loki:3100 -e GRAFANA_URL=http://grafana:3000 \
-    -e GRAFANA_PASSWORD="$(envval GRAFANA_ADMIN_PASSWORD)" -e DEPLOY_ENV=vm-deploy-smoke \
-    python:3.12-slim python /w/scripts/send_test_log.py --to loki --grafana
+    -e LOKI_URL=http://loki:3100 -e OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 \
+    -e GRAFANA_URL=http://grafana:3000 -e GRAFANA_PASSWORD="$(envval GRAFANA_ADMIN_PASSWORD)" \
+    -e DEPLOY_ENV=vm-deploy-smoke -e TRACE_ID="${SMOKE_TRACE_ID:-}" \
+    python:3.12-slim python /w/scripts/send_test_log.py --to collector --checks --grafana
 
 step "Memory against the caps"
 docker stats --no-stream --format '{{.Name}}\t{{.MemUsage}}' | grep "^${OBS_PROJECT}-" || true
