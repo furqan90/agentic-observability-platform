@@ -46,6 +46,7 @@ conventions — snake_case for Python, camelCase for TypeScript, etc.):
 | `getAnthropicClient(**kwargs)` | Return an auto-instrumented Anthropic client. |
 | `traceAttributes(userId?, sessionId?)` | Per-request context: every span of the trace started inside it carries the user and session (§8.3). |
 | `initLogging(level?)` | Ship the process's log records over OTLP (§8). Usable without LangFuse installed. |
+| `scoreTrace(traceId, name, value, dataType, scoreId?, comment?, metadata?)` / `deleteScore(scoreId)` / `scoreIdFor(...parts)` | Score a finished trace, confirmed: true only when LangFuse accepted it (§8.4). |
 
 **Enforcement rule:** Agent code imports only from the SDK facade. Direct
 imports of `langfuse`, `openai`, `anthropic`, or OTel primitives outside the
@@ -224,6 +225,22 @@ Only those four become Loki labels. Everything else is structured metadata: quer
   name or an email.
 - **`sessionId` groups a conversation's turns.**
 - **Nesting:** an inner `traceAgent` without a `userId` keeps the outer value.
+
+### 8.4 Scores on a trace (SDK 0.5.0)
+
+Feedback and evaluations judge a trace after it ended. `scoreTrace()` sends one score with LangFuse's public
+REST API (`POST /api/public/scores`) and returns true only on a 2xx. A caller can record what reached LangFuse
+and resend the rest: the LangFuse client's own `create_score` only queues, and can't delete.
+
+- **Ids make it idempotent:** `scoreIdFor(...parts)` is a deterministic UUID. Sending the same id again
+  **replaces** the score (LangFuse upserts by id), so a changed vote replaces its score. `deleteScore(id)`
+  removes one, e.g. a feedback reason the user un-ticked.
+- **Environment:** the score carries `environment = DEPLOY_ENV`, as traces do, so LangFuse's environment filter
+  shows them together.
+- **Keys:** `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`: the trace's project.
+- **Never raises** on a runtime failure (LangFuse down, refused, a timeout): it returns false and logs a warning.
+  Blocking, so call it from a background task.
+- **No `langfuse` import:** a service that doesn't trace can score.
 
 ---
 

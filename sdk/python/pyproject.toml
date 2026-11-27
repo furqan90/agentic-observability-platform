@@ -1,6 +1,6 @@
 [project]
 name = "agentic-observability-sdk"
-version = "0.4.1"
+version = "0.5.0"
 description = "agent instrumentation facade (LangFuse v4 + OpenTelemetry). Agents import this, never langfuse directly."
 readme = "README.md"
 requires-python = ">=3.10"

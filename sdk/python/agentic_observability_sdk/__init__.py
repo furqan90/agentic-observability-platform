@@ -6,6 +6,7 @@ Install:
 Import:
     from agentic_observability_sdk import get_tracer, trace_agent, trace_tool, record_usage, shutdown
     from agentic_observability_sdk import init_logging, trace_attributes          # 0.4.0
+    from agentic_observability_sdk import score_trace, delete_score, score_id_for  # 0.5.0
 
 This is the single swap point over LangFuse v4 + OpenTelemetry. The ``langfuse``
 package is imported in exactly one module (``tracer.py``); a direct ``langfuse``
@@ -20,7 +21,7 @@ See ``AGENT-ONBOARDING.md`` for the full walkthrough.
 
 from importlib import import_module
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 # name -> submodule that defines it
 _EXPORTS = {
@@ -42,6 +43,10 @@ _EXPORTS = {
     "record_usage": "metrics",
     # Project (no langfuse): LANGFUSE_PROJECT slug (tl.project) or None
     "get_project": "project",
+    # Scores on a trace, confirmed (no langfuse: LangFuse's REST API), SDK 0.5.0
+    "score_trace": "scores",
+    "delete_score": "scores",
+    "score_id_for": "scores",
     # Logs (no langfuse)
     "init_logging": "logs",
     "flush_logging": "logs",
