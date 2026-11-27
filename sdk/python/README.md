@@ -71,6 +71,16 @@ A line written inside a `@trace_agent` span carries its trace id, so Grafana lin
 `from agentic_observability_sdk.logs import init_logging` works without `langfuse` installed. See
 [CONTRACT.md §8](../CONTRACT.md).
 
+### Scores (SDK 0.5.0)
+
+```python
+from agentic_observability_sdk import score_trace, delete_score, score_id_for
+
+sid = score_id_for(trace_id, voter, "user_feedback")          # same inputs → same id → a resend replaces it
+ok = score_trace(trace_id, "user_feedback", 0, data_type="BOOLEAN", score_id=sid, comment="…")
+# ok is True only when LangFuse accepted it; it never raises. Call it off the request path (it's blocking).
+```
+
 ### Making LLM calls visible (prompts + responses)
 
 `@trace_agent` records function args/return — not internal LLM calls. Use the
